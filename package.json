@@ -1,0 +1,44 @@
+{
+  "name": "incandescence-reader",
+  "version": "1.0.0",
+  "description": "白炽阅读器 · IncandescenceReader",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.incandescence.reader",
+    "productName": "白炽阅读器",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "Reader.html"
+    ],
+    "extraResources": [
+      {
+        "from": "wayback_snapshots",
+        "to": "wayback_snapshots",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.ico"
+    },
+    "portable": {
+      "artifactName": "IncandescenceReader_portable.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^40.9.1",
+    "electron-builder": "^26.9.0"
+  }
+}

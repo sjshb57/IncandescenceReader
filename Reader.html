@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>白炽阅读器 · IncandescenceReader</title>
+<style>
+/* ── 暗色（默认，X 原版配色） ──────────────────────────── */
+:root {
+  --bg:           #000000;
+  --bg-panel:     #000000;
+  --bg-search:    #202327;
+  --bg-hover:     #080808;
+  --bg-active:    #16181c;
+  --border:       #2f3336;
+  --text:         #e7e9ea;
+  --text-dim:     #71767b;
+  --text-muted:   #3e4144;
+  --accent:       #1d9bf0;
+  --accent-hover: #1a8cd8;
+  --avatar-border:#000000;
+  --banner-bg:    #333333;
+  --tag-bg:       #031018;
+}
+/* ── 亮色 ─────────────────────────────────────────────── */
+body.light {
+  --bg:           #ffffff;
+  --bg-panel:     #f7f9f9;
+  --bg-search:    #eff3f4;
+  --bg-hover:     #f7f9f9;
+  --bg-active:    #e7e7e7;
+  --border:       #eff3f4;
+  --text:         #0f1419;
+  --text-dim:     #536471;
+  --text-muted:   #b0b8c1;
+  --accent:       #1d9bf0;
+  --accent-hover: #1a8cd8;
+  --avatar-border:#ffffff;
+  --banner-bg:    #cfd9de;
+  --tag-bg:       #e8f5fd;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+  transition: background .2s, color .2s;
+  overflow-x: hidden;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+::-webkit-scrollbar { width: 0; }
+
+/* ── 布局 ─────────────────────────────────────────────── */
+.layout {
+  display: flex;
+  min-height: 100vh;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+/* ════════════════════════════════════════════════════════
+   左侧边栏
+════════════════════════════════════════════════════════ */
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.sidebar-head {
+  padding: 20px 16px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sidebar-logo     { font-size: 20px; font-weight: 800; color: var(--text); }
+.sidebar-logo-sub { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+
+.sidebar-ctrl {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.ctrl-btn {
+  font-size: 12px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.ctrl-btn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--text-dim); }
+
+/* 日期树 */
+.date-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 20px;
+}
+.date-tree::-webkit-scrollbar { width: 3px; }
+.date-tree::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.caret { font-size: 10px; color: var(--text-dim); transition: transform .18s; flex-shrink: 0; display: inline-block; }
+
+/* 年 */
+.year-label {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  font-size: 15px; font-weight: 700; color: var(--text);
+  cursor: pointer; user-select: none;
+  transition: background .12s;
+  border-bottom: 1px solid var(--border);
+}
+.year-label:hover { background: var(--bg-hover); }
+.tree-year.open > .year-label .caret { transform: rotate(90deg); }
+.months-wrap { display: none; }
+.tree-year.open > .months-wrap { display: block; }
+
+/* 月 */
+.month-label {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px 8px 28px;
+  font-size: 14px; font-weight: 600; color: var(--text-dim);
+  cursor: pointer; user-select: none;
+  transition: background .12s;
+  border-bottom: 1px solid var(--border);
+}
+.month-label:hover { background: var(--bg-hover); color: var(--text); }
+.tree-month.open > .month-label .caret { transform: rotate(90deg); }
+.days-wrap { display: none; }
+.tree-month.open > .days-wrap { display: block; }
+
+/* 日 */
+.day-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 16px 7px 42px;
+  font-size: 14px; color: var(--text-dim);
+  cursor: pointer;
+  transition: background .1s, color .1s;
+  border-bottom: 1px solid var(--border);
+}
+.day-row:hover { background: var(--bg-hover); color: var(--text); }
+.day-row.active { color: var(--accent); background: var(--tag-bg); font-weight: 600; }
+.day-count {
+  font-size: 11px; color: var(--text-muted);
+  background: var(--bg-active);
+  border-radius: 999px; padding: 1px 7px; min-width: 24px; text-align: center;
+}
+.day-row.active .day-count { background: var(--tag-bg); color: var(--accent); }
+
+/* ════════════════════════════════════════════════════════
+   中间主列（固定600px，X风格）
+════════════════════════════════════════════════════════ */
+.main-col {
+  width: 600px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* 个人资料 */
+.profile-header { border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.banner { width: 100%; height: 200px; object-fit: cover; background: var(--banner-bg); display: block; }
+.profile-info { padding: 12px 16px 16px; position: relative; }
+.theme-toggle-btn {
+  position: absolute; top: 12px; right: 16px;
+  width: 34px; height: 34px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text); font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.theme-toggle-btn:hover { background: var(--bg-hover); }
+.avatar-img {
+  width: 80px; height: 80px; border-radius: 50%;
+  border: 4px solid var(--avatar-border);
+  position: absolute; top: -45px; left: 16px;
+  background: var(--banner-bg); object-fit: cover; display: block;
+}
+.profile-names  { margin-top: 44px; }
+.p-name         { font-size: 20px; font-weight: 800; display: block; color: var(--text); }
+.p-user         { color: var(--text-dim); font-size: 15px; }
+.p-bio          { margin: 12px 0 8px; font-size: 15px; color: var(--text); line-height: 1.5; white-space: pre-wrap; }
+.p-meta         { color: var(--text-dim); font-size: 14px; display: flex; gap: 16px; flex-wrap: wrap; margin-top: 4px; }
+.p-meta span    { display: flex; align-items: center; gap: 4px; }
+
+/* 搜索栏 */
+.search-area {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(12px);
+  z-index: 20; flex-shrink: 0;
+}
+.search-inner {
+  background: var(--bg-search); border-radius: 999px;
+  padding: 8px 16px; display: flex; align-items: center; gap: 8px;
+}
+.search-icon { color: var(--text-dim); font-size: 14px; flex-shrink: 0; }
+#search-input {
+  background: transparent; border: none; color: var(--text);
+  width: 100%; outline: none; font-size: 15px; font-family: inherit;
+}
+#search-input::placeholder { color: var(--text-dim); }
+.search-clear {
+  color: var(--bg); cursor: pointer; font-size: 11px;
+  display: none; flex-shrink: 0;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--text-dim);
+  align-items: center; justify-content: center;
+}
+.search-clear.visible { display: flex; }
+
+/* 顶栏 */
+.day-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; min-height: 50px;
+}
+.day-heading { font-size: 17px; font-weight: 800; color: var(--text); }
+.day-heading .dim { font-weight: 400; font-size: 13px; color: var(--text-dim); margin-left: 6px; }
+.order-btn {
+  font-size: 13px; padding: 5px 14px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: transparent; color: var(--text-dim);
+  cursor: pointer; transition: all .15s; font-family: inherit;
+}
+.order-btn:hover { border-color: var(--text-dim); color: var(--text); }
+
+/* 内容区 */
+.content-area { flex: 1; }
+
+/* 欢迎 */
+.welcome { padding: 60px 32px; text-align: center; }
+.welcome-icon  { font-size: 40px; margin-bottom: 16px; opacity: .4; }
+.welcome-title { font-size: 23px; font-weight: 800; color: var(--text); margin-bottom: 8px; }
+.welcome-hint  { font-size: 15px; color: var(--text-dim); line-height: 1.8; }
+
+/* 搜索结果 */
+.result-count { padding: 10px 16px; font-size: 13px; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+.result-item {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .1s;
+}
+.result-item:hover { background: var(--bg-hover); }
+.result-meta   { display: flex; gap: 8px; margin-bottom: 4px; align-items: center; }
+.result-date   { font-size: 13px; color: var(--accent); font-weight: 600; }
+.result-time   { font-size: 12px; color: var(--text-muted); }
+.result-text {
+  font-size: 14px; color: var(--text-dim); line-height: 1.6;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.result-text mark {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent); border-radius: 2px; padding: 0 1px;
+}
+
+/* 帖子块 */
+.post-block { border-bottom: 1px solid var(--border); }
+.post-meta-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.post-time-label { font-size: 13px; color: var(--text-dim); }
+.post-seq        { font-size: 12px; color: var(--text-muted); }
+
+/* iframe 容器——背景色跟随主题，避免暗色时白色闪烁 */
+.post-iframe-wrap { width: 100%; background: #000000; }
+body.light .post-iframe-wrap { background: #ffffff; }
+
+.post-iframe {
+  width: 100%; border: none; display: block; min-height: 160px;
+}
+
+.loading-msg { padding: 32px 16px; text-align: center; font-size: 15px; color: var(--text-dim); }
+
+/* ════════════════════════════════════════════════════════
+   右侧信息栏
+════════════════════════════════════════════════════════ */
+.right-panel {
+  flex: 1; min-width: 0;
+  padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 16px;
+  overflow-y: auto; position: sticky; top: 0; height: 100vh;
+}
+.rp-box { background: var(--bg-search); border-radius: 16px; padding: 16px; }
+.rp-title { font-size: 19px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
+.stat-row {
+  display: flex; justify-content: space-between;
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 14px;
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-label { color: var(--text-dim); }
+.stat-val   { color: var(--text); font-weight: 600; }
+
+.recent-item { padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: opacity .15s; }
+.recent-item:last-child { border-bottom: none; }
+.recent-item:hover { opacity: .7; }
+.recent-date { font-size: 13px; color: var(--accent); font-weight: 600; margin-bottom: 2px; }
+.recent-text {
+  font-size: 13px; color: var(--text-dim); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.credit-box { font-size: 13px; color: var(--text-dim); line-height: 1.9; }
+.credit-box b { color: var(--text); }
+
+@media (max-width: 1100px) { .right-panel { display: none; } }
+@media (max-width: 900px)  { .sidebar { width: 200px; } .main-col { width: auto; flex: 1; } }
+
+@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+.anim { animation: fadeUp .2s ease both; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ══ 左侧边栏 ══════════════════════════════════════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <div class="sidebar-logo">白炽阅读器</div>
+      <div class="sidebar-logo-sub">IncandescenceReader · @AnIncandescence</div>
+    </div>
+    <div class="sidebar-ctrl">
+      <button class="ctrl-btn" onclick="expandAll()">展开全部</button>
+      <button class="ctrl-btn" onclick="collapseAll()">折叠全部</button>
+    </div>
+    <div class="date-tree" id="date-tree">
+      <div class="loading-msg">正在加载…</div>
+    </div>
+  </aside>
+
+  <!-- ══ 中间主列 ════════════════════════════════════════════ -->
+  <div class="main-col">
+
+    <div class="profile-header">
+      <img class="banner" id="p-banner" src="" alt="">
+      <div class="profile-info">
+        <button class="theme-toggle-btn" id="theme-btn" onclick="toggleTheme()">🌙</button>
+        <img class="avatar-img" id="p-avatar" src="" alt="">
+        <div class="profile-names">
+          <span class="p-name"    id="p-name">炽烈已极</span>
+          <span class="p-user"    id="p-username">@AnIncandescence</span>
+        </div>
+        <div class="p-bio"  id="p-bio"></div>
+        <div class="p-meta">
+          <span id="p-loc"></span>
+          <span id="p-link"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="search-area">
+      <div class="search-inner">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" placeholder="搜索关键词或日期…" autocomplete="off" spellcheck="false">
+        <span class="search-clear" id="search-clear" onclick="clearSearch()">✕</span>
+      </div>
+    </div>
+
+    <div class="day-topbar">
+      <div class="day-heading" id="day-heading">选择日期浏览</div>
+      <button class="order-btn" id="order-btn" onclick="toggleOrder()">↑ 旧→新</button>
+    </div>
+
+    <div class="content-area" id="content-area">
+      <div class="welcome">
+        <div class="welcome-icon">✦</div>
+        <div class="welcome-title">档案已就绪</div>
+        <div class="welcome-hint">从左侧选择日期，或在上方搜索关键词</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ 右侧信息栏 ════════════════════════════════════════ -->
+  <aside class="right-panel">
+
+    <div class="rp-box">
+      <div class="rp-title">档案概览</div>
+      <div class="stat-row"><span class="stat-label">总计帖子</span><span class="stat-val" id="stat-total">—</span></div>
+      <div class="stat-row"><span class="stat-label">跨越天数</span><span class="stat-val" id="stat-days">—</span></div>
+      <div class="stat-row"><span class="stat-label">最早记录</span><span class="stat-val" id="stat-oldest">—</span></div>
+      <div class="stat-row"><span class="stat-label">最新记录</span><span class="stat-val" id="stat-newest">—</span></div>
+    </div>
+
+    <div class="rp-box">
+      <div class="rp-title">最近收录</div>
+      <div id="recent-list"></div>
+    </div>
+
+    <div class="rp-box credit-box">
+      <b>愿世间再无痛苦，唯爱不独行</b><br><br>
+      谨以此工具纪念<br>@AnIncandescence<br><br>
+      存档地址：github.com/sjshb57/AnIncanescence<br>
+      项目地址：github.com/sjshb57/IncandescenceReader<br>
+      <span style="font-size:12px;color:var(--text-muted)">本项目基于 GPL 3.0 协议开源，任何使用或分发均须遵守该协议。</span>
+    </div>
+
+  </aside>
+</div>
+
+<script>
+const DB_PATH      = 'incr://local/wayback_snapshots/index.json';
+const PROFILE_PATH = 'incr://local/wayback_snapshots/profile.json';
+const HTML_BASE    = 'incr://local/wayback_snapshots/html/';
+
+let db        = [];
+let treeData  = {};
+let activeDay = null;
+let ascending = false;
+let searchMode= false;
+let isLight   = false;
+
+/* ── 启动 ─────────────────────────────────────────────── */
+async function init() {
+  if (localStorage.getItem('reader-theme') === 'light') applyTheme(true, false);
+  await Promise.all([loadProfile(), loadIndex()]);
+}
+
+/* ── Profile ──────────────────────────────────────────── */
+async function loadProfile() {
+  try {
+    const r = await fetch(PROFILE_PATH);
+    if (!r.ok) return;
+    const c = await r.json();
+    document.getElementById('p-name').textContent     = c.name     || '';
+    document.getElementById('p-username').textContent = c.username || '';
+    document.getElementById('p-bio').textContent      = c.bio      || '';
+    if (c.avatar) document.getElementById('p-avatar').src = `incr://local/wayback_snapshots/${c.avatar}`;
+    if (c.banner) document.getElementById('p-banner').src = `incr://local/wayback_snapshots/${c.banner}`;
+    if (c.location) document.getElementById('p-loc').innerHTML  = `📍 ${esc(c.location)}`;
+    if (c.link) {
+      const d = c.link.replace(/^https?:\/\//,'');
+      document.getElementById('p-link').innerHTML = `🔗 <a href="${esc(c.link)}" target="_blank">${esc(d)}</a>`;
+    }
+  } catch(e) { console.warn('profile.json 加载失败', e); }
+}
+
+/* ── Index ────────────────────────────────────────────── */
+async function loadIndex() {
+  try {
+    const r = await fetch(DB_PATH);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    db = await r.json();
+  } catch(e) {
+    document.getElementById('date-tree').innerHTML =
+      `<div class="loading-msg" style="color:#f44336;">找不到 index.json<br>请先运行 build_index.py</div>`;
+    return;
+  }
+  buildTree(); renderTree(); renderStats(); renderRecent(); setupSearch();
+}
+
+/* ── 树形数据 ─────────────────────────────────────────── */
+function buildTree() {
+  treeData = {};
+  for (const item of db) {
+    // 用本地日期分组，和帖子内显示的日期一致
+    const { localDate } = utcToLocal(item.timestamp);
+    const [y,m,d] = localDate.split('-');
+    (treeData[y] = treeData[y]||{});
+    (treeData[y][m] = treeData[y][m]||{});
+    (treeData[y][m][d] = treeData[y][m][d]||[]).push(item);
+  }
+}
+
+function renderTree() {
+  const c = document.getElementById('date-tree');
+  let h = '';
+  for (const y of Object.keys(treeData).sort((a,b)=>b-a)) {
+    h += `<div class="tree-year open" id="yr-${y}">
+      <div class="year-label" onclick="toggle('yr-${y}')">
+        <span class="caret">▶</span>${y}年
+      </div><div class="months-wrap">`;
+    for (const m of Object.keys(treeData[y]).sort((a,b)=>b-a)) {
+      const mk=`${y}-${m}`;
+      h += `<div class="tree-month open" id="mo-${mk}">
+        <div class="month-label" onclick="toggle('mo-${mk}')">
+          <span class="caret">▶</span>${m}月
+        </div><div class="days-wrap">`;
+      for (const d of Object.keys(treeData[y][m]).sort((a,b)=>b-a)) {
+        const dk=`${y}-${m}-${d}`, n=treeData[y][m][d].length;
+        h += `<div class="day-row" id="dy-${dk}" onclick="selectDay('${dk}')">
+          <span>${d}日</span><span class="day-count">${n}</span>
+        </div>`;
+      }
+      h += `</div></div>`;
+    }
+    h += `</div></div>`;
+  }
+  c.innerHTML = h;
+}
+
+function toggle(id){ document.getElementById(id).classList.toggle('open'); }
+function expandAll() { document.querySelectorAll('.tree-year,.tree-month').forEach(e=>e.classList.add('open')); }
+function collapseAll(){ document.querySelectorAll('.tree-year,.tree-month').forEach(e=>e.classList.remove('open')); }
+
+/* ── 日视图 ───────────────────────────────────────────── */
+function selectDay(dk) {
+  if (searchMode) exitSearch();
+  activeDay = dk;
+  document.querySelectorAll('.day-row').forEach(e=>e.classList.remove('active'));
+  const el = document.getElementById(`dy-${dk}`);
+  if (el) {
+    el.classList.add('active');
+    const [y,m] = dk.split('-');
+    document.getElementById(`yr-${y}`)?.classList.add('open');
+    document.getElementById(`mo-${y}-${m}`)?.classList.add('open');
+    requestAnimationFrame(()=>el.scrollIntoView({block:'nearest',behavior:'smooth'}));
+  }
+  const [y,m,d] = dk.split('-');
+  const items = treeData[y]?.[m]?.[d]||[];
+  document.getElementById('day-heading').innerHTML =
+    `${y}年${m}月${d}日<span class="dim">${items.length} 篇</span>`;
+  renderDayView(items);
+}
+
+function renderDayView(items) {
+  const sorted = ascending
+    ? [...items].sort((a,b)=>a.timestamp.localeCompare(b.timestamp))
+    : [...items].sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
+
+  document.getElementById('content-area').innerHTML =
+    `<div class="anim">${sorted.map((item,i)=>{
+      const { localTime } = utcToLocal(item.timestamp);
+      return `
+      <div class="post-block">
+        <div class="post-meta-bar">
+          <span class="post-time-label">${localTime} (本地时间)</span>
+          <span class="post-seq">${i+1} / ${sorted.length}</span>
+        </div>
+        <div class="post-iframe-wrap">
+          <iframe class="post-iframe"
+            src="${HTML_BASE}${esc(item.file)}"
+            scrolling="no"
+            onload="onFrameLoad(this)"
+            sandbox="allow-scripts allow-same-origin allow-popups">
+          </iframe>
+        </div>
+      </div>`;
+    }).join('')}
+    </div>`;
+}
+
+function onFrameLoad(iframe) {
+  autoHeight(iframe);
+  injectTheme(iframe);
+}
+
+function autoHeight(iframe) {
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) return;
+    const h = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
+    iframe.style.height = (h + 4) + 'px';
+  } catch(e) { iframe.style.height = '400px'; }
+}
+
+/* ── 主题注入 iframe（同源直接操作 DOM）───────────────── */
+function injectTheme(iframe) {
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) return;
+    writeTheme(doc, isLight);
+  } catch(e) {}
+}
+
+function writeTheme(doc, light) {
+  let s = doc.getElementById('__rt__');
+  if (!s) { s = doc.createElement('style'); s.id='__rt__'; doc.head.appendChild(s); }
+  if (light) {
+    s.textContent = `
+      html,body{background:#ffffff!important;color:#0f1419!important}
+      .tweet-container{background:#ffffff!important;border-color:#eff3f4!important;color:#0f1419!important}
+      .embedded-tweet-container{background:#ffffff!important;border-color:#eff3f4!important}
+      .tweet-content,.tweet-author-name{color:#0f1419!important}
+      .tweet-author-username,.date,.date a{color:#536471!important}
+      a{color:#1d9bf0!important}`;
+  } else {
+    s.textContent = `
+      html,body{background:#000000!important;color:#e7e9ea!important}
+      .tweet-container{background:#000000!important;border-color:#2f3336!important;color:#e7e9ea!important}
+      .embedded-tweet-container{background:#000000!important;border-color:#2f3336!important}
+      .tweet-content,.tweet-author-name{color:#e7e9ea!important}
+      .tweet-author-username,.date,.date a{color:#71767b!important}
+      a{color:#1d9bf0!important}`;
+  }
+  // 重算高度
+  setTimeout(()=>{
+    const iframes = document.querySelectorAll('.post-iframe');
+    iframes.forEach(f=>{
+      try { if((f.contentDocument||f.contentWindow?.document)===doc) autoHeight(f); } catch(e){}
+    });
+  }, 80);
+}
+
+/* ── 排序 ─────────────────────────────────────────────── */
+function toggleOrder() {
+  ascending = !ascending;
+  document.getElementById('order-btn').textContent = ascending ? '↓ 新→旧' : '↑ 旧→新';
+  if (activeDay && !searchMode) {
+    const [y,m,d] = activeDay.split('-');
+    renderDayView(treeData[y]?.[m]?.[d]||[]);
+  }
+}
+
+/* ── 搜索 ─────────────────────────────────────────────── */
+function setupSearch() {
+  const inp=document.getElementById('search-input');
+  const clr=document.getElementById('search-clear');
+  let t;
+  inp.addEventListener('input',()=>{
+    const kw=inp.value.trim();
+    clr.classList.toggle('visible',kw.length>0);
+    clearTimeout(t); t=setTimeout(()=>doSearch(kw),160);
+  });
+}
+
+function doSearch(kw) {
+  if (!kw) { exitSearch(); return; }
+  searchMode=true; activeDay=null;
+  document.querySelectorAll('.day-row').forEach(e=>e.classList.remove('active'));
+  document.getElementById('day-heading').innerHTML=`"${esc(kw)}"`;
+  const kl=kw.toLowerCase();
+  const res=db.filter(i=>{
+    const { localDate, localTime } = utcToLocal(i.timestamp);
+    return (i.text&&i.text.toLowerCase().includes(kl))||localDate.includes(kw)||localTime.includes(kw);
+  });
+  const area=document.getElementById('content-area');
+  if (!res.length) {
+    area.innerHTML=`<div class="welcome">
+      <div class="welcome-icon" style="opacity:.3">🔍</div>
+      <div class="welcome-title">无结果</div>
+      <div class="welcome-hint">没有匹配「${esc(kw)}」的帖子</div>
+    </div>`; return;
+  }
+  const hi=txt=>{
+    if(!txt) return '';
+    return esc(txt).replace(new RegExp(escRe(kw),'gi'),m=>`<mark>${m}</mark>`);
+  };
+  const shown=res.slice(0,300);
+  area.innerHTML=`<div class="anim">
+    <div class="result-count">共 ${res.length} 条结果${res.length>300?' · 仅显示前300条':''}</div>
+    ${shown.map(item=>{
+      const { localDate, localTime } = utcToLocal(item.timestamp);
+      return `
+      <div class="result-item" onclick="jumpToPost('${esc(localDate)}','${esc(item.file)}')">
+        <div class="result-meta">
+          <span class="result-date">${localDate}</span>
+          <span class="result-time">${localTime}</span>
+        </div>
+        <div class="result-text">${hi(item.text)}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function jumpToPost(dayKey, file) {
+  clearSearch();
+  selectDay(dayKey);
+  setTimeout(()=>{
+    document.querySelectorAll('.post-iframe').forEach(f=>{
+      if(f.src.endsWith(file)) f.scrollIntoView({behavior:'smooth',block:'start'});
+    });
+  }, 450);
+}
+
+function clearSearch() {
+  document.getElementById('search-input').value='';
+  document.getElementById('search-clear').classList.remove('visible');
+  exitSearch();
+}
+
+function exitSearch() {
+  searchMode=false;
+  if (activeDay) {
+    const [y,m,d]=activeDay.split('-');
+    const items=treeData[y]?.[m]?.[d]||[];
+    renderDayView(items);
+    document.getElementById('day-heading').innerHTML=
+      `${y}年${m}月${d}日<span class="dim">${items.length} 篇</span>`;
+  } else {
+    document.getElementById('day-heading').textContent='选择日期浏览';
+    document.getElementById('content-area').innerHTML=`
+      <div class="welcome">
+        <div class="welcome-icon">✦</div>
+        <div class="welcome-title">档案已就绪</div>
+        <div class="welcome-hint">从左侧选择日期，或在上方搜索关键词</div>
+      </div>`;
+  }
+}
+
+/* ── 右侧统计 ─────────────────────────────────────────── */
+function renderStats() {
+  const days=new Set(db.map(i=>utcToLocal(i.timestamp).localDate)).size;
+  const oldest = db.at(-1) ? utcToLocal(db.at(-1).timestamp).localDate : '—';
+  const newest = db[0]     ? utcToLocal(db[0].timestamp).localDate     : '—';
+  document.getElementById('stat-total').textContent  = db.length.toLocaleString();
+  document.getElementById('stat-days').textContent   = days.toLocaleString();
+  document.getElementById('stat-oldest').textContent = oldest;
+  document.getElementById('stat-newest').textContent = newest;
+}
+
+function renderRecent() {
+  const seen=new Set(), days=[];
+  for (const i of db) {
+    if (!seen.has(i.date)){seen.add(i.date);days.push(i);}
+    if (days.length>=8) break;
+  }
+  document.getElementById('recent-list').innerHTML=days.map(i=>{
+    const { localDate, localTime } = utcToLocal(i.timestamp);
+    return `
+    <div class="recent-item" onclick="selectDay('${localDate}')">
+      <div class="recent-date">${localDate} · ${localTime}</div>
+      <div class="recent-text">${esc(i.text.slice(0,50))}${i.text.length>50?'…':''}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ── 主题切换 ─────────────────────────────────────────── */
+function applyTheme(light, save=true) {
+  isLight=light;
+  document.body.classList.toggle('light', light);
+  document.getElementById('theme-btn').textContent = light ? '☀️' : '🌙';
+  if (save) localStorage.setItem('reader-theme', light?'light':'dark');
+  // 同步所有已渲染的 iframe
+  document.querySelectorAll('.post-iframe').forEach(f=>{
+    try {
+      const doc=f.contentDocument||f.contentWindow?.document;
+      if (doc&&doc.readyState!=='loading') writeTheme(doc, light);
+    } catch(e){}
+  });
+}
+function toggleTheme(){ applyTheme(!isLight); }
+
+/* ── 工具 ─────────────────────────────────────────────── */
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+
+/**
+ * 把 index.json 里存的 UTC timestamp 转为本地时间字符串
+ * 例如 "2026-04-05T19:58:12.000Z" → "2026-04-06 03:58:12"（UTC+8）
+ * 返回 { localDate: "2026-04-06", localTime: "03:58:12" }
+ */
+function utcToLocal(timestamp) {
+  const d = new Date(timestamp);
+  const pad = n => String(n).padStart(2, '0');
+  return {
+    localDate: `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,
+    localTime: `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`,
+  };
+}
+
+init();
+</script>
+</body>
+</html>
