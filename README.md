@@ -4,7 +4,7 @@
 
 > 此项目初衷是为 @AnIncandescence 所做的 Twitter 存档阅读器。  
 > 她不希望被遗忘，不想被遗忘，这或许是她最后的愿望。  
-> 这个项目因她而生，即使你不认识她，也请让我们悼念，愿她的来生不再痛苦，愿她会被这个世界所偏爱。  
+> 这个项目因她而生，即使你不认识她，也请让我们悼念，愿她的来生不再痛苦，愿她会被这个世界所偏爱。
 >
 > 晚安，炽烈已极。
 
@@ -54,7 +54,7 @@ npm start
 
 直接打开窗口预览效果，不需要打包。
 
-### 第四步：打包成便携 exe
+### 第四步：打包
 
 ```
 npm run dist
@@ -63,17 +63,27 @@ npm run dist
 完成后在 `dist/` 文件夹里找到：
 
 ```
-IncandescenceReader_portable.exe
+dist/
+  win-unpacked/
+    IncandescenceReader.exe    ← 双击这个运行
+    resources/
+    locales/
+    ...
 ```
 
-**直接双击即可运行，无需安装，无需 Python，无需 localhost。**
+**直接双击 `win-unpacked/IncandescenceReader.exe` 即可运行，无需安装，无需 Python，无需 localhost。**
 
 ### 注意事项
 
-- exe 文件大小约 150~180MB（内置 Chromium），正常现象
-- 如果没有 icon.ico，打包时会用默认图标，不影响功能（可以忽略警告）
-- 数据文件夹 `wayback_snapshots/` 已经打包进 exe 内部，移动 exe 时不需要带着数据文件夹
-- 每次更新存档（新增 HTML 文件）后，需要重新跑 `build_index.py` 然后重新 `npm run dist`
+- `win-unpacked/` 整个文件夹就是程序本体，移动时需要整个文件夹一起移动，不能单独拷走里面的 exe
+- 文件夹大小约 150~180MB（内置 Chromium），正常现象
+- 如果没有 `icon.ico`，打包时会用默认图标，不影响功能（可以忽略警告）
+- **更新存档后不需要重新打包**，直接操作 `win-unpacked/resources/wayback_snapshots/`：
+    1. 把新的 HTML 文件复制到 `.../wayback_snapshots/html/`
+    2. 重新跑 `build_index.py` 生成新的 `index.json`
+    3. 把新的 `index.json` 替换到 `.../wayback_snapshots/`
+    4. 下次启动自动生效
+- 只有修改了 `Reader.html` 或 `main.js` 代码本身时，才需要重新 `npm run dist`
 
 ---
 
@@ -104,7 +114,7 @@ IncandescenceReader_portable.exe
 
 注册了一个名为 `incr://` 的自定义协议，将所有资源请求映射到本地文件系统，从而绕开 `file://` 协议的跨域（CORS）限制，使 `Reader.html` 内的 `fetch()` 调用可以正常读取本地 JSON 和 HTML 文件。打包后数据目录指向 `resources/wayback_snapshots/`，开发时指向项目根目录。
 
-`registerSchemesAsPrivileged` 在 `app.whenReady()` 之前于顶层调用，符合 Electron 的协议注册时序要求。
+`registerSchemesAsPrivileged` 在 `app.whenReady()` 之前于顶层调用，符合 Electron 的协议注册时序要求。开发模式与打包模式统一走 `incr://local/Reader.html`，无需分支处理。
 
 ### Reader.html — 前端界面
 
