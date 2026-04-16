@@ -108,6 +108,11 @@ IncandescenceReader_portable.exe
 
 搜索功能在内存中对 `index.json` 的 `text` 字段进行全文过滤，支持关键词高亮，结果点击后可跳转至对应日期视图并滚动定位到目标帖子。所有时间戳以 UTC 存储，显示时通过 `Date` 对象转换为用户本地时区。
 
+## 鸣谢
+
+感谢 @CheeseGhostfox 的启发，项目地址：
+https://github.com/CheeseGhostfox/IncandescenceReader
+
 ---
 
 ## License
