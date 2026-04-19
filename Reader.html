@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>白炽阅读器 · IncandescenceReader</title>
 <style>
-/* ── 暗色（默认，X 原版配色） ──────────────────────────── */
+/* ── 暗色（默认） ─────────────────────────────────────── */
 :root {
   --bg:           #000000;
   --bg-panel:     #000000;
@@ -21,6 +21,9 @@
   --avatar-border:#000000;
   --banner-bg:    #333333;
   --tag-bg:       #031018;
+  --scrollbar-bg: transparent;
+  --scrollbar-thumb: #2f3336;
+  --scrollbar-thumb-hover: #536471;
 }
 /* ── 亮色 ─────────────────────────────────────────────── */
 body.light {
@@ -38,6 +41,8 @@ body.light {
   --avatar-border:#ffffff;
   --banner-bg:    #cfd9de;
   --tag-bg:       #e8f5fd;
+  --scrollbar-thumb: #cfd9de;
+  --scrollbar-thumb-hover: #536471;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -52,7 +57,9 @@ body {
 }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-::-webkit-scrollbar { width: 0; }
+
+/* 全局隐藏滚动条（由自定义滚动条接管） */
+::-webkit-scrollbar { width: 0; height: 0; }
 
 /* ── 布局 ─────────────────────────────────────────────── */
 .layout {
@@ -116,7 +123,6 @@ a:hover { text-decoration: underline; }
 
 .caret { font-size: 10px; color: var(--text-dim); transition: transform .18s; flex-shrink: 0; display: inline-block; }
 
-/* 年 */
 .year-label {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 16px;
@@ -130,7 +136,6 @@ a:hover { text-decoration: underline; }
 .months-wrap { display: none; }
 .tree-year.open > .months-wrap { display: block; }
 
-/* 月 */
 .month-label {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 16px 8px 28px;
@@ -144,7 +149,6 @@ a:hover { text-decoration: underline; }
 .days-wrap { display: none; }
 .tree-month.open > .days-wrap { display: block; }
 
-/* 日 */
 .day-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 7px 16px 7px 42px;
@@ -163,16 +167,72 @@ a:hover { text-decoration: underline; }
 .day-row.active .day-count { background: var(--tag-bg); color: var(--accent); }
 
 /* ════════════════════════════════════════════════════════
-   中间主列（固定600px，X风格）
+   中间主列（含自定义滚动条）
 ════════════════════════════════════════════════════════ */
-.main-col {
+.main-col-wrap {
   width: 600px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
+  position: relative; /* 定位锚点，供滚动条使用 */
+  display: flex;
+}
+
+/* 实际滚动容器 */
+.main-col {
+  flex: 1;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  /* 隐藏原生滚动条 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
 }
+.main-col::-webkit-scrollbar { display: none; }
+
+/* ── 自定义滚动条 ────────────────────────────────────── */
+.custom-scrollbar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 6px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  cursor: pointer;
+  /* 默认不透明度0，鼠标进入或滚动时显示 */
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+.custom-scrollbar.visible { opacity: 1; }
+
+.scrollbar-track {
+  position: absolute;
+  top: 4px; bottom: 4px; left: 1px;
+  width: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+.scrollbar-thumb {
+  position: absolute;
+  left: 0;
+  width: 4px;
+  min-height: 30px;
+  border-radius: 2px;
+  background: var(--scrollbar-thumb);
+  transition: background .15s, width .15s, left .15s;
+  cursor: grab;
+}
+.custom-scrollbar:hover .scrollbar-thumb,
+.scrollbar-thumb.dragging {
+  background: var(--scrollbar-thumb-hover);
+  width: 6px;
+  left: -1px;
+}
+.scrollbar-thumb.dragging { cursor: grabbing; }
 
 /* 个人资料 */
 .profile-header { border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -200,14 +260,19 @@ a:hover { text-decoration: underline; }
 .p-meta         { color: var(--text-dim); font-size: 14px; display: flex; gap: 16px; flex-wrap: wrap; margin-top: 4px; }
 .p-meta span    { display: flex; align-items: center; gap: 4px; }
 
-/* 搜索栏 */
-.search-area {
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  position: sticky; top: 0;
+/* ── 搜索栏 + 吸顶区域 ────────────────────────────────── */
+.sticky-area {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex-shrink: 0;
   background: color-mix(in srgb, var(--bg) 85%, transparent);
   backdrop-filter: blur(12px);
-  z-index: 20; flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-area {
+  padding: 10px 16px 0;
 }
 .search-inner {
   background: var(--bg-search); border-radius: 999px;
@@ -228,13 +293,49 @@ a:hover { text-decoration: underline; }
 }
 .search-clear.visible { display: flex; }
 
-/* 顶栏 */
+/* ── Tab 栏（推文 / 回复）─────────────────────────────── */
+.tab-bar {
+  display: flex;
+  border-bottom: none;
+}
+.tab-btn {
+  flex: 1;
+  padding: 14px 0 12px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-dim);
+  cursor: pointer;
+  position: relative;
+  transition: color .15s, background .15s;
+  user-select: none;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+}
+.tab-btn:hover { color: var(--text); background: var(--bg-hover); }
+.tab-btn.active {
+  color: var(--text);
+  font-weight: 700;
+}
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 56px; height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* ── 顶栏（日期标题 + 排序）──────────────────────────── */
 .day-topbar {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px; border-bottom: 1px solid var(--border);
-  flex-shrink: 0; min-height: 50px;
+  padding: 10px 16px;
+  flex-shrink: 0; min-height: 44px;
+  border-bottom: 1px solid var(--border);
 }
-.day-heading { font-size: 17px; font-weight: 800; color: var(--text); }
+.day-heading { font-size: 16px; font-weight: 800; color: var(--text); }
 .day-heading .dim { font-weight: 400; font-size: 13px; color: var(--text-dim); margin-left: 6px; }
 .order-btn {
   font-size: 13px; padding: 5px 14px;
@@ -276,18 +377,157 @@ a:hover { text-decoration: underline; }
 .post-block { border-bottom: 1px solid var(--border); }
 .post-meta-bar {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  padding: 6px 16px; border-bottom: 1px solid var(--border);
   background: var(--bg-panel);
 }
-.post-time-label { font-size: 13px; color: var(--text-dim); }
-.post-seq        { font-size: 12px; color: var(--text-muted); }
+.post-time-label { font-size: 12px; color: var(--text-muted); }
+.post-seq        { font-size: 11px; color: var(--text-muted); }
 
-/* iframe 容器——背景色跟随主题，避免暗色时白色闪烁 */
+/* ── 回复标签 ─────────────────────────────────────────── */
+.post-reply-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text-dim);
+  padding: 0 8px 0 0;
+}
+.post-reply-badge svg { opacity: .5; }
+
+/* iframe 容器 */
 .post-iframe-wrap { width: 100%; background: #000000; }
 body.light .post-iframe-wrap { background: #ffffff; }
-
 .post-iframe {
   width: 100%; border: none; display: block; min-height: 160px;
+}
+
+/* ── 回复链展开区 ─────────────────────────────────────── */
+.replies-section {
+  border-top: 1px solid var(--border);
+}
+.replies-toggle {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  font-size: 13px; color: var(--accent);
+  cursor: pointer;
+  transition: background .12s;
+  user-select: none;
+}
+.replies-toggle:hover { background: var(--bg-hover); }
+.replies-toggle-icon {
+  font-size: 10px;
+  transition: transform .2s;
+  display: inline-block;
+}
+.replies-toggle.open .replies-toggle-icon { transform: rotate(90deg); }
+.replies-count-badge {
+  font-size: 11px;
+  background: var(--tag-bg);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.replies-list { display: none; }
+.replies-list.open { display: block; }
+
+/* ── Twitter风格回复卡片 ─────────────────────────────── */
+.reply-card {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  position: relative;
+  transition: background .1s;
+}
+.reply-card:hover { background: var(--bg-hover); }
+
+/* 头像列（含竖线连接） */
+.reply-avatar-col {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  width: 40px;
+}
+.reply-avatar {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--banner-bg);
+  flex-shrink: 0;
+}
+/* 头像下方的竖线——连接上下回复 */
+.reply-avatar-col .reply-thread-line {
+  flex: 1;
+  width: 2px;
+  min-height: 8px;
+  background: var(--border);
+  margin-top: 4px;
+}
+/* 最后一条回复不显示竖线 */
+.reply-card:last-child .reply-thread-line { display: none; }
+
+/* 内容列 */
+.reply-body {
+  flex: 1;
+  min-width: 0;
+}
+.reply-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.reply-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+.reply-username {
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.reply-time-inline {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.reply-virtual-badge {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-active);
+  padding: 1px 6px;
+  border-radius: 999px;
+  letter-spacing: .3px;
+}
+/* 虚拟条目微妙的视觉区分：左边框颜色略淡一点 */
+.reply-card-virtual { background: color-mix(in srgb, var(--bg-hover) 50%, transparent); }
+.reply-text {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.reply-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.reply-img {
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 10px;
+  object-fit: cover;
+  cursor: pointer;
+  flex: 1 1 calc(50% - 4px);
+}
+.reply-images.single .reply-img {
+  flex: none;
+  max-width: 100%;
 }
 
 .loading-msg { padding: 32px 16px; text-align: center; font-size: 15px; color: var(--text-dim); }
@@ -323,7 +563,7 @@ body.light .post-iframe-wrap { background: #ffffff; }
 .credit-box b { color: var(--text); }
 
 @media (max-width: 1100px) { .right-panel { display: none; } }
-@media (max-width: 900px)  { .sidebar { width: 200px; } .main-col { width: auto; flex: 1; } }
+@media (max-width: 900px)  { .sidebar { width: 200px; } .main-col-wrap { width: auto; flex: 1; } }
 
 @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 .anim { animation: fadeUp .2s ease both; }
@@ -348,48 +588,66 @@ body.light .post-iframe-wrap { background: #ffffff; }
     </div>
   </aside>
 
-  <!-- ══ 中间主列 ════════════════════════════════════════════ -->
-  <div class="main-col">
+  <!-- ══ 中间主列（含自定义滚动条）══════════════════════════ -->
+  <div class="main-col-wrap" id="main-col-wrap">
 
-    <div class="profile-header">
-      <img class="banner" id="p-banner" src="" alt="">
-      <div class="profile-info">
-        <button class="theme-toggle-btn" id="theme-btn" onclick="toggleTheme()">🌙</button>
-        <img class="avatar-img" id="p-avatar" src="" alt="">
-        <div class="profile-names">
-          <span class="p-name"    id="p-name">炽烈已极</span>
-          <span class="p-user"    id="p-username">@AnIncandescence</span>
+    <div class="main-col" id="main-col">
+
+      <div class="profile-header">
+        <img class="banner" id="p-banner" src="" alt="">
+        <div class="profile-info">
+          <button class="theme-toggle-btn" id="theme-btn" onclick="toggleTheme()">🌙</button>
+          <img class="avatar-img" id="p-avatar" src="" alt="">
+          <div class="profile-names">
+            <span class="p-name"    id="p-name">炽烈已极</span>
+            <span class="p-user"    id="p-username">@AnIncandescence</span>
+          </div>
+          <div class="p-bio"  id="p-bio"></div>
+          <div class="p-meta">
+            <span id="p-loc"></span>
+            <span id="p-link"></span>
+          </div>
         </div>
-        <div class="p-bio"  id="p-bio"></div>
-        <div class="p-meta">
-          <span id="p-loc"></span>
-          <span id="p-link"></span>
+      </div>
+
+      <!-- 搜索 + Tab 吸顶区域 -->
+      <div class="sticky-area">
+        <div class="search-area">
+          <div class="search-inner">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="search-input" placeholder="搜索关键词或日期…" autocomplete="off" spellcheck="false">
+            <span class="search-clear" id="search-clear" onclick="clearSearch()">✕</span>
+          </div>
+        </div>
+        <div class="tab-bar" id="tab-bar">
+          <button class="tab-btn active" id="tab-tweets" onclick="switchTab('tweets')">推文</button>
+          <button class="tab-btn" id="tab-replies" onclick="switchTab('replies')">回复</button>
         </div>
       </div>
-    </div>
 
-    <div class="search-area">
-      <div class="search-inner">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="search-input" placeholder="搜索关键词或日期…" autocomplete="off" spellcheck="false">
-        <span class="search-clear" id="search-clear" onclick="clearSearch()">✕</span>
+      <div class="day-topbar">
+        <div class="day-heading" id="day-heading">选择日期浏览</div>
+        <button class="order-btn" id="order-btn" onclick="toggleOrder()">↑ 旧→新</button>
+      </div>
+
+      <div class="content-area" id="content-area">
+        <div class="welcome">
+          <div class="welcome-icon">✦</div>
+          <div class="welcome-title">档案已就绪</div>
+          <div class="welcome-hint">从左侧选择日期，或在上方搜索关键词</div>
+        </div>
+      </div>
+
+    </div><!-- /.main-col -->
+
+    <!-- 自定义滚动条 -->
+    <div class="custom-scrollbar" id="custom-scrollbar">
+      <div class="scrollbar-track">
+        <div class="scrollbar-thumb" id="scrollbar-thumb"></div>
       </div>
     </div>
 
-    <div class="day-topbar">
-      <div class="day-heading" id="day-heading">选择日期浏览</div>
-      <button class="order-btn" id="order-btn" onclick="toggleOrder()">↑ 旧→新</button>
-    </div>
-
-    <div class="content-area" id="content-area">
-      <div class="welcome">
-        <div class="welcome-icon">✦</div>
-        <div class="welcome-title">档案已就绪</div>
-        <div class="welcome-hint">从左侧选择日期，或在上方搜索关键词</div>
-      </div>
-    </div>
-
-  </div>
+  </div><!-- /.main-col-wrap -->
 
   <!-- ══ 右侧信息栏 ════════════════════════════════════════ -->
   <aside class="right-panel">
@@ -422,6 +680,7 @@ body.light .post-iframe-wrap { background: #ffffff; }
 const DB_PATH      = 'incr://local/wayback_snapshots/index.json';
 const PROFILE_PATH = 'incr://local/wayback_snapshots/profile.json';
 const HTML_BASE    = 'incr://local/wayback_snapshots/html/';
+const ASSET_BASE   = 'incr://local/wayback_snapshots/';
 
 let db        = [];
 let treeData  = {};
@@ -429,10 +688,17 @@ let activeDay = null;
 let ascending = false;
 let searchMode= false;
 let isLight   = false;
+let activeTab = 'tweets';
+
+// tweet_id → item 的索引（用于快速查找回复关系）
+let idIndex  = {};
+// reply_to_id → [回复列表] 全局映射（从整个db建立，不限当天）
+let replyMap = {};
 
 /* ── 启动 ─────────────────────────────────────────────── */
 async function init() {
   if (localStorage.getItem('reader-theme') === 'light') applyTheme(true, false);
+  setupCustomScrollbar();
   await Promise.all([loadProfile(), loadIndex()]);
 }
 
@@ -466,14 +732,57 @@ async function loadIndex() {
       `<div class="loading-msg" style="color:#f44336;">找不到 index.json<br>请先运行 build_index.py</div>`;
     return;
   }
+  // idIndex 包含所有条目（含虚拟条目），供展开回复时查找被回复的外人推文数据
+  // replyMap 只包含真实条目，避免虚拟条目被当成主人的回复列出
+  idIndex  = {};
+  replyMap = {};
+  for (const item of db) {
+    if (item.tweet_id) idIndex[item.tweet_id] = item;
+    if (item.is_virtual) continue;
+    if (item.is_reply && item.conversation_id) {
+      (replyMap[item.conversation_id] = replyMap[item.conversation_id] || []).push(item);
+    }
+  }
+  // db 的其他用途（buildTree/搜索/最近/统计）都只应看到真实条目
+  db = db.filter(i => !i.is_virtual);
   buildTree(); renderTree(); renderStats(); renderRecent(); setupSearch();
 }
 
-/* ── 树形数据 ─────────────────────────────────────────── */
+/* ── Tab 切换 ─────────────────────────────────────────── */
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('tab-tweets').classList.toggle('active', tab === 'tweets');
+  document.getElementById('tab-replies').classList.toggle('active', tab === 'replies');
+
+  // tab 切换时：推文tab只看主推文，回复tab看所有真实条目
+  // 重建日期树和最近收录以反映当前tab的内容
+  buildTree();
+  renderTree();
+  renderRecent();
+  // 如果有激活的日期，重新给它加active类并滚动到视图
+  if (activeDay && !searchMode) {
+    const el = document.getElementById(`dy-${activeDay}`);
+    if (el) el.classList.add('active');
+    const [y,m,d] = activeDay.split('-');
+    renderDayView(treeData[y]?.[m]?.[d]||[]);
+  }
+}
+
+/* ── 获取当前tab的筛选后数据 ──────────────────────────── */
+function currentTabItems() {
+  // 推文tab：只看主推文（is_reply=false）
+  // 回复tab：所有真实条目（保持原样，含主推文和回复）
+  if (activeTab === 'tweets') {
+    return db.filter(i => !i.is_reply);
+  }
+  return db;
+}
+
+/* ── 树形数据（根据当前tab筛选）────────────────────────── */
 function buildTree() {
   treeData = {};
-  for (const item of db) {
-    // 用本地日期分组，和帖子内显示的日期一致
+  const source = currentTabItems();
+  for (const item of source) {
     const { localDate } = utcToLocal(item.timestamp);
     const [y,m,d] = localDate.split('-');
     (treeData[y] = treeData[y]||{});
@@ -531,38 +840,263 @@ function selectDay(dk) {
   document.getElementById('day-heading').innerHTML =
     `${y}年${m}月${d}日<span class="dim">${items.length} 篇</span>`;
   renderDayView(items);
+
+  // 中间主列滚动到"日期标题条"(day-topbar) 刚好贴在 sticky-area 下方
+  setTimeout(() => {
+    const col = document.getElementById('main-col');
+    const dayBar = document.querySelector('.day-topbar');
+    const sticky = document.querySelector('.sticky-area');
+    if (col && dayBar) {
+      const stickyH = sticky ? sticky.offsetHeight : 0;
+      const barRect = dayBar.getBoundingClientRect();
+      const colRect = col.getBoundingClientRect();
+      const target = col.scrollTop + (barRect.top - colRect.top) - stickyH;
+      col.scrollTo({ top: target, behavior: 'smooth' });
+    }
+  }, 50);
 }
 
+/* ── 渲染日视图（支持推文/回复两个tab）────────────────── */
 function renderDayView(items) {
   const sorted = ascending
     ? [...items].sort((a,b)=>a.timestamp.localeCompare(b.timestamp))
     : [...items].sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
 
-  document.getElementById('content-area').innerHTML =
-    `<div class="anim">${sorted.map((item,i)=>{
-      const { localTime } = utcToLocal(item.timestamp);
-      return `
-      <div class="post-block">
-        <div class="post-meta-bar">
-          <span class="post-time-label">${localTime} (本地时间)</span>
-          <span class="post-seq">${i+1} / ${sorted.length}</span>
-        </div>
-        <div class="post-iframe-wrap">
-          <iframe class="post-iframe"
-            src="${HTML_BASE}${esc(item.file)}"
-            scrolling="no"
-            onload="onFrameLoad(this)"
-            sandbox="allow-scripts allow-same-origin allow-popups">
-          </iframe>
-        </div>
-      </div>`;
-    }).join('')}
-    </div>`;
+  const area = document.getElementById('content-area');
+
+  if (activeTab === 'tweets') {
+    // 推文tab：只显示主推文（is_reply=false），并在每条下方附加其回复
+    renderTweetsTab(sorted, area);
+  } else {
+    // 回复tab：显示所有回复推文（is_reply=true）
+    renderRepliesTab(sorted, area);
+  }
 }
 
+/* ── 推文Tab：主推文(iframe) + 可展开回复(完整对话链卡片) ── */
+function renderTweetsTab(sorted, area) {
+  const mainTweets = sorted.filter(i => !i.is_reply);
+
+  if (!mainTweets.length) {
+    area.innerHTML = `<div class="welcome">
+      <div class="welcome-icon" style="opacity:.3">💬</div>
+      <div class="welcome-title">当日无主推文</div>
+      <div class="welcome-hint">这一天只有回复，切换到「回复」标签查看</div>
+    </div>`;
+    return;
+  }
+
+  area.innerHTML = `<div class="anim">${mainTweets.map((item, i) => {
+    const { localTime } = utcToLocal(item.timestamp);
+    const ownerReplies = (replyMap[item.tweet_id] || [])
+      .slice()
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    // 构建完整对话链：
+    // 对每条主人回复，如果 reply_to_id 指向的条目（可能是虚拟的外人条目或主人的上一条）
+    // 不是主推文本身、且还没显示过、且能在 idIndex 里找到数据 → 在主人回复上方插入该条目
+    const chainItems = [];
+    const seen = new Set();  // 已加入链的 tweet_id
+    seen.add(item.tweet_id); // 主推文不重复加入
+    for (const rep of ownerReplies) {
+      // 查 reply_to_id 的目标
+      const parentId = rep.reply_to_id;
+      if (parentId && parentId !== item.tweet_id && !seen.has(parentId)) {
+        const parent = idIndex[parentId];
+        if (parent) {
+          chainItems.push(parent);
+          seen.add(parentId);
+        }
+      }
+      if (!seen.has(rep.tweet_id)) {
+        chainItems.push(rep);
+        seen.add(rep.tweet_id);
+      }
+    }
+
+    const replyCount = ownerReplies.length;
+    const hasReplies = replyCount > 0;
+
+    return `
+    <div class="post-block" data-tweet-id="${esc(item.tweet_id||'')}">
+      <div class="post-meta-bar">
+        <span class="post-time-label">${localTime} (本地时间)</span>
+        <span class="post-seq">${i+1} / ${mainTweets.length}</span>
+      </div>
+      <div class="post-iframe-wrap">
+        <iframe class="post-iframe"
+          src="${HTML_BASE}${esc(item.file)}"
+          scrolling="no"
+          onload="onFrameLoad(this)"
+          sandbox="allow-scripts allow-same-origin allow-popups">
+        </iframe>
+      </div>
+      ${hasReplies ? `
+      <div class="replies-section">
+        <div class="replies-toggle" onclick="toggleReplies(this)">
+          <span class="replies-toggle-icon">▶</span>
+          <span>展开回复</span>
+          <span class="replies-count-badge">${replyCount}</span>
+        </div>
+        <div class="replies-list">
+          ${chainItems.map(rep => renderReplyCard(rep)).join('')}
+        </div>
+      </div>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+/* ── 渲染单条回复卡片（Twitter风格，直接用index数据）── */
+function renderReplyCard(rep) {
+  // 时间戳可能为空（虚拟条目在 embedded 里没抓到 dateString 的情况）
+  const localTime = rep.timestamp ? utcToLocal(rep.timestamp).localTime : '';
+  const name     = esc(rep.author_name     || '');
+  const username = esc(rep.author_username || '');
+  const avatar   = rep.author_avatar ? `${ASSET_BASE}${rep.author_avatar.replace(/^\.\.\//, '')}` : '';
+  const bodyText = esc(rep.body_text || rep.text || '').replace(/\n/g, '<br>');
+
+  // 主人自己的推文不再显示 @AnIncandescence（右侧）
+  const isOwner = (rep.author_username || '').toLowerCase() === '@anincandescence';
+  const usernameHtml = isOwner ? '' : `<span class="reply-username">${username}</span>`;
+  // 虚拟条目标记（表示该推文不在本地）
+  const virtualBadge = rep.is_virtual
+    ? `<span class="reply-virtual-badge" title="该推文数据来自 embedded-tweet-container">引用</span>`
+    : '';
+
+  // 图片：只在 media_keys 有值时显示（media_keys=[] 说明图属于被引用推文，不属于本条回复）
+  const hasOwnMedia = rep.media_keys && rep.media_keys.length > 0;
+  const images = hasOwnMedia && rep.images && rep.images.length > 0 ? rep.images : [];
+  const imgClass = images.length === 1 ? 'reply-images single' : 'reply-images';
+  const imgsHtml = images.length > 0
+    ? `<div class="${imgClass}">${images.map(src => {
+        const fullSrc = `${ASSET_BASE}${src.replace(/^\.\.\//, '')}`;
+        return `<img class="reply-img" src="${esc(fullSrc)}" loading="lazy" onclick="this.requestFullscreen&&this.requestFullscreen()">`;
+      }).join('')}</div>`
+    : '';
+
+  const avatarHtml = avatar
+    ? `<img class="reply-avatar" src="${esc(avatar)}" alt="${name}" onerror="this.style.background='var(--banner-bg)';this.removeAttribute('src')">`
+    : `<div class="reply-avatar" style="background:var(--banner-bg)"></div>`;
+
+  return `
+  <div class="reply-card${rep.is_virtual ? ' reply-card-virtual' : ''}">
+    <div class="reply-avatar-col">
+      ${avatarHtml}
+      <div class="reply-thread-line"></div>
+    </div>
+    <div class="reply-body">
+      <div class="reply-header">
+        <span class="reply-name">${name}</span>
+        ${usernameHtml}
+        ${virtualBadge}
+        ${localTime ? `<span class="reply-time-inline">${localTime}</span>` : ''}
+      </div>
+      <div class="reply-text">${bodyText}</div>
+      ${imgsHtml}
+    </div>
+  </div>`;
+}
+
+/* ── 回复Tab：所有回复推文（保持iframe完整显示）──────── */
+function renderRepliesTab(sorted, area) {
+  const replies = sorted.filter(i => i.is_reply);
+
+  if (!replies.length) {
+    area.innerHTML = `<div class="welcome">
+      <div class="welcome-icon" style="opacity:.3">↩️</div>
+      <div class="welcome-title">当日无回复</div>
+      <div class="welcome-hint">这一天没有回复推文</div>
+    </div>`;
+    return;
+  }
+
+  area.innerHTML = `<div class="anim">${replies.map((item, i) => {
+    const { localTime } = utcToLocal(item.timestamp);
+    const parentItem = item.reply_to_id ? idIndex[item.reply_to_id] : null;
+    const parentHint = parentItem
+      ? `回复 ${utcToLocal(parentItem.timestamp).localDate} 的推文`
+      : (item.reply_to_id ? `回复 #${item.reply_to_id.slice(-6)}` : '回复');
+
+    return `
+    <div class="post-block">
+      <div class="post-meta-bar">
+        <span class="post-reply-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01z"/>
+          </svg>
+          ${esc(parentHint)}
+        </span>
+        <span class="post-seq" style="margin-left:auto">${i+1} / ${replies.length}</span>
+      </div>
+      <div class="post-time-label" style="padding:2px 16px 4px;font-size:12px;color:var(--text-muted)">${localTime}</div>
+      <div class="post-iframe-wrap">
+        <iframe class="post-iframe"
+          src="${HTML_BASE}${esc(item.file)}"
+          scrolling="no"
+          onload="onFrameLoad(this)"
+          sandbox="allow-scripts allow-same-origin allow-popups">
+        </iframe>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+/* ── 展开/折叠回复 ────────────────────────────────────── */
+function toggleReplies(toggleEl) {
+  toggleEl.classList.toggle('open');
+  const list = toggleEl.nextElementSibling;
+  list.classList.toggle('open');
+  const isOpen = list.classList.contains('open');
+  toggleEl.querySelector('span:nth-child(2)').textContent = isOpen ? '收起回复' : '展开回复';
+}
+
+/* ── iframe 加载 ──────────────────────────────────────── */
 function onFrameLoad(iframe) {
   autoHeight(iframe);
   injectTheme(iframe);
+  // 推文tab展开的回复iframe：隐藏embedded-tweet-container（避免重复显示主推文内容）
+  if (iframe.classList.contains('reply-iframe')) {
+    injectHideEmbedded(iframe);
+  }
+}
+
+function injectHideEmbedded(iframe) {
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) return;
+    let s = doc.getElementById('__hide_embedded__');
+    if (!s) {
+      s = doc.createElement('style');
+      s.id = '__hide_embedded__';
+      doc.head.appendChild(s);
+    }
+    // 隐藏 embedded-tweet-container（避免重复显示被引用/被回复推文的内容）
+    s.textContent = `.embedded-tweet-container { display: none !important; }`;
+
+    // 额外处理：回复推文的 tweet-content 里可能有爬虫从主推文复制来的图片
+    // 判断依据：该 iframe 对应的 item 在 index.json 中 media_keys=[]
+    // 说明这条推文本身没有媒体，外层的 tweet-image 是多余的，直接移除
+    const src = iframe.src || '';
+    const fname = src.split('/').pop();
+    const item = fname ? Object.values(idIndex).find(i => i.file === fname) : null;
+    if (item && item.media_keys && item.media_keys.length === 0) {
+      // 这条推文本身无媒体，删除外层 tweet-content 里的所有 tweet-image
+      const nonjson = doc.getElementById('nonjsonview');
+      if (nonjson) {
+        const embedded = nonjson.querySelector('.embedded-tweet-container');
+        // 只删除在 embedded 之前（即外层）的 tweet-image
+        const allImgs = nonjson.querySelectorAll('.tweet-content > .tweet-image');
+        allImgs.forEach(img => {
+          // 确认图片不在 embedded 内部
+          if (!embedded || !embedded.contains(img)) {
+            img.remove();
+          }
+        });
+      }
+    }
+
+    setTimeout(() => autoHeight(iframe), 80);
+  } catch(e) {}
 }
 
 function autoHeight(iframe) {
@@ -574,7 +1108,7 @@ function autoHeight(iframe) {
   } catch(e) { iframe.style.height = '400px'; }
 }
 
-/* ── 主题注入 iframe（同源直接操作 DOM）───────────────── */
+/* ── 主题注入 iframe ──────────────────────────────────── */
 function injectTheme(iframe) {
   try {
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -603,13 +1137,125 @@ function writeTheme(doc, light) {
       .tweet-author-username,.date,.date a{color:#71767b!important}
       a{color:#1d9bf0!important}`;
   }
-  // 重算高度
   setTimeout(()=>{
-    const iframes = document.querySelectorAll('.post-iframe');
-    iframes.forEach(f=>{
+    document.querySelectorAll('.post-iframe,.reply-iframe').forEach(f=>{
       try { if((f.contentDocument||f.contentWindow?.document)===doc) autoHeight(f); } catch(e){}
     });
   }, 80);
+}
+
+/* ── 自定义滚动条 ─────────────────────────────────────── */
+function setupCustomScrollbar() {
+  const col   = document.getElementById('main-col');
+  const bar   = document.getElementById('custom-scrollbar');
+  const thumb = document.getElementById('scrollbar-thumb');
+
+  let hideTimer    = null;
+  let isDragging   = false;
+  let dragStartY   = 0;
+  let dragStartScrollTop = 0;
+
+  // 速度感应：记录滚动速度来动态调整thumb长度
+  let lastScrollTop  = 0;
+  let lastScrollTime = 0;
+  let velocityTimer  = null;
+
+  function showBar() {
+    bar.classList.add('visible');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (!isDragging) bar.classList.remove('visible');
+    }, 1200);
+  }
+
+  function updateThumb(speedExtra = 0) {
+    const trackH = bar.clientHeight - 8;
+    const ratio  = col.clientHeight / col.scrollHeight;
+    const baseH  = Math.max(30, trackH * ratio);
+    // 速度越快thumb越长，最多额外增加trackH*0.35
+    const totalH = Math.min(baseH + speedExtra, baseH + trackH * 0.35);
+    const scrollRatio = col.scrollTop / Math.max(1, col.scrollHeight - col.clientHeight);
+    // thumb变长时向上偏移，保持视觉中心稳定
+    const thumbTop = 4 + scrollRatio * (trackH - totalH);
+    thumb.style.height     = totalH + 'px';
+    thumb.style.top        = Math.max(4, thumbTop) + 'px';
+    thumb.style.transition = speedExtra > 0
+      ? 'height .1s ease, top .1s ease, background .15s, width .15s, left .15s'
+      : 'height .3s ease, top .1s ease, background .15s, width .15s, left .15s';
+  }
+
+  col.addEventListener('scroll', () => {
+    const now      = performance.now();
+    const dt       = now - lastScrollTime;
+    const dy       = Math.abs(col.scrollTop - lastScrollTop);
+    lastScrollTop  = col.scrollTop;
+    lastScrollTime = now;
+
+    // 速度 px/ms
+    const speed = dt > 0 ? dy / dt : 0;
+    // 慢速几乎不变，快速才明显变长，封顶40px
+    const extra = Math.min(Math.sqrt(speed) * 10, 40);
+
+    updateThumb(extra);
+    showBar();
+
+    // 停止滚动后200ms平滑收缩回原始长度
+    clearTimeout(velocityTimer);
+    velocityTimer = setTimeout(() => {
+      updateThumb(0);
+    }, 200);
+  });
+
+  col.addEventListener('mouseenter', () => { updateThumb(0); showBar(); });
+  bar.addEventListener('mouseenter', () => { updateThumb(0); showBar(); });
+
+  bar.addEventListener('wheel', (e) => {
+    col.scrollTop += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+
+  thumb.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    dragStartY = e.clientY;
+    dragStartScrollTop = col.scrollTop;
+    thumb.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    // 正确的拖动映射：
+    //   鼠标移动 Y px → thumb 应该跟随移动 Y px（1:1跟手）
+    //   thumb 可移动范围 = trackH - thumbH
+    //   内容可滚动范围 = scrollHeight - clientHeight
+    //   所以 scrollTop 变化 = Y * (scrollHeight - clientHeight) / (trackH - thumbH)
+    const trackH   = bar.clientHeight - 8;
+    const thumbH   = thumb.offsetHeight;
+    const thumbRange = Math.max(1, trackH - thumbH);
+    const scrollRange = Math.max(1, col.scrollHeight - col.clientHeight);
+    const delta     = (e.clientY - dragStartY) * (scrollRange / thumbRange);
+    col.scrollTop = dragStartScrollTop + delta;
+    updateThumb(0);
+    showBar();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      thumb.classList.remove('dragging');
+      hideTimer = setTimeout(() => bar.classList.remove('visible'), 1200);
+    }
+  });
+
+  bar.addEventListener('click', (e) => {
+    if (e.target === thumb) return;
+    const rect = bar.getBoundingClientRect();
+    const clickRatio = (e.clientY - rect.top - 4) / (bar.clientHeight - 8);
+    col.scrollTop = clickRatio * (col.scrollHeight - col.clientHeight);
+    updateThumb(0);
+  });
+
+  updateThumb(0);
 }
 
 /* ── 排序 ─────────────────────────────────────────────── */
@@ -677,7 +1323,7 @@ function jumpToPost(dayKey, file) {
   clearSearch();
   selectDay(dayKey);
   setTimeout(()=>{
-    document.querySelectorAll('.post-iframe').forEach(f=>{
+    document.querySelectorAll('.post-iframe,.reply-iframe').forEach(f=>{
       if(f.src.endsWith(file)) f.scrollIntoView({behavior:'smooth',block:'start'});
     });
   }, 450);
@@ -720,19 +1366,43 @@ function renderStats() {
 }
 
 function renderRecent() {
-  const seen=new Set(), days=[];
-  for (const i of db) {
-    if (!seen.has(i.date)){seen.add(i.date);days.push(i);}
-    if (days.length>=8) break;
-  }
-  document.getElementById('recent-list').innerHTML=days.map(i=>{
+  // 显示最新的8条（不按天去重，每条独立显示）
+  const source = currentTabItems();
+  const latest = source.slice(0, 8);
+  document.getElementById('recent-list').innerHTML=latest.map(i=>{
     const { localDate, localTime } = utcToLocal(i.timestamp);
     return `
-    <div class="recent-item" onclick="selectDay('${localDate}')">
+    <div class="recent-item" onclick="jumpToRecent('${localDate}','${esc(i.file)}')">
       <div class="recent-date">${localDate} · ${localTime}</div>
       <div class="recent-text">${esc(i.text.slice(0,50))}${i.text.length>50?'…':''}</div>
     </div>`;
   }).join('');
+}
+
+/* ── 最近收录点击：跳到该推文并对齐到搜索栏下方 ─────── */
+function jumpToRecent(dayKey, file) {
+  selectDay(dayKey);
+  setTimeout(() => {
+    const col = document.getElementById('main-col');
+    // 找到目标推文 iframe（主推文）所在的 .post-block
+    const iframes = document.querySelectorAll('.post-iframe');
+    for (const f of iframes) {
+      if (f.src.endsWith(file)) {
+        const block = f.closest('.post-block');
+        if (block) {
+          // 计算 sticky 吸顶区域的高度（搜索栏+tab栏）
+          const sticky = document.querySelector('.sticky-area');
+          const stickyH = sticky ? sticky.offsetHeight : 0;
+          const rect = block.getBoundingClientRect();
+          const colRect = col.getBoundingClientRect();
+          // 目标滚动位置：当前scrollTop + （block距col顶部的距离） - stickyH
+          const target = col.scrollTop + (rect.top - colRect.top) - stickyH;
+          col.scrollTo({ top: target, behavior: 'smooth' });
+        }
+        break;
+      }
+    }
+  }, 250);
 }
 
 /* ── 主题切换 ─────────────────────────────────────────── */
@@ -741,8 +1411,7 @@ function applyTheme(light, save=true) {
   document.body.classList.toggle('light', light);
   document.getElementById('theme-btn').textContent = light ? '☀️' : '🌙';
   if (save) localStorage.setItem('reader-theme', light?'light':'dark');
-  // 同步所有已渲染的 iframe
-  document.querySelectorAll('.post-iframe').forEach(f=>{
+  document.querySelectorAll('.post-iframe,.reply-iframe').forEach(f=>{
     try {
       const doc=f.contentDocument||f.contentWindow?.document;
       if (doc&&doc.readyState!=='loading') writeTheme(doc, light);
@@ -755,11 +1424,6 @@ function toggleTheme(){ applyTheme(!isLight); }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
 
-/**
- * 把 index.json 里存的 UTC timestamp 转为本地时间字符串
- * 例如 "2026-04-05T19:58:12.000Z" → "2026-04-06 03:58:12"（UTC+8）
- * 返回 { localDate: "2026-04-06", localTime: "03:58:12" }
- */
 function utcToLocal(timestamp) {
   const d = new Date(timestamp);
   const pad = n => String(n).padStart(2, '0');
