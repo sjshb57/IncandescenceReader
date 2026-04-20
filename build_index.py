@@ -17,9 +17,36 @@ from bs4 import BeautifulSoup
 # ── 配置 ──────────────────────────────────────────────────────
 HTML_DIR   = "./wayback_snapshots/html"
 JSON_DIR   = "./wayback_snapshots/json"
+IMAGE_DIR  = "./wayback_snapshots/image"
 INDEX_FILE = "./wayback_snapshots/index.json"
 TEXT_MAX   = 500
 # ──────────────────────────────────────────────────────────────
+
+
+def build_image_index() -> dict:
+    """
+    扫描 image/ 目录，建立 basename → 相对路径的映射。
+    basename 是 Twitter 媒体文件的核心 ID（如 G7F7hTpaIAEw53d 或 HFJ8JQ5aAAAXUq_）。
+    本地文件名格式：
+      - {timestamp}_..._media_BASENAME_jpg.jpg  (URL末尾.jpg 被 safe_filename 转成 _jpg 然后再加扩展名)
+      - {timestamp}_..._media_BASENAME.jpg      (因 clean[:100] 截断后没有 _jpg 后缀的情况)
+    注意：BASENAME 可以包含下划线（Twitter 媒体ID会用下划线作填充）
+    返回 {basename: "../image/完整文件名.jpg", ...}
+    """
+    if not os.path.isdir(IMAGE_DIR):
+        return {}
+    index = {}
+    for fname in os.listdir(IMAGE_DIR):
+        # 优先匹配带 _ext 的格式（双扩展），basename 用非贪婪匹配
+        m = re.search(r'_media_(.+?)_(?:jpg|png|gif|webp|jpeg)\.(?:jpg|png|gif|webp|jpeg)$', fname, re.IGNORECASE)
+        if not m:
+            # 兜底：单扩展
+            m = re.search(r'_media_(.+?)\.(?:jpg|png|gif|webp|jpeg)$', fname, re.IGNORECASE)
+        if m:
+            basename = m.group(1)
+            if basename not in index:
+                index[basename] = f"../image/{fname}"
+    return index
 
 
 def extract_date(html_text: str) -> str:
@@ -225,15 +252,19 @@ def fname_to_iso(fname: str) -> str:
 
 def extract_from_json(json_data: dict) -> dict:
     result = {
-        "tweet_id":        "",
-        "conversation_id": "",
-        "is_reply":        False,
-        "reply_to_id":     "",
-        "reply_type":      "",
-        "has_quoted":      False,
-        "quoted_id":       "",
-        "has_media":       False,
-        "media_keys":      [],
+        "tweet_id":            "",
+        "conversation_id":     "",
+        "is_reply":            False,
+        "reply_to_id":         "",
+        "reply_type":          "",
+        "has_quoted":          False,
+        "quoted_id":           "",
+        "has_media":           False,
+        "media_keys":          [],
+        "wanted_basenames":    [],   # 主推文应显示的图 basename 列表
+        "embedded_basenames":  [],   # embedded 应显示的图 basename 列表
+        "remove_urls":         [],   # 主推文文字里要删除的 t.co 短链（图片/引用占位）
+        "embedded_remove_urls":[],   # embedded 文字里要删除的 t.co 短链
     }
     data     = json_data.get("data", {})
     includes = json_data.get("includes", {})
@@ -253,20 +284,79 @@ def extract_from_json(json_data: dict) -> dict:
     mk  = att.get("media_keys", [])
     result["media_keys"] = mk
     result["has_media"]  = len(mk) > 0 or bool(includes.get("media"))
+
+    # 建立 media_key → URL basename 的映射
+    # URL 形如 https://pbs.twimg.com/media/G7F7hTpaIAEw53d.jpg → basename = G7F7hTpaIAEw53d
+    # 注意：basename 可能包含下划线（Twitter 媒体ID会用下划线作填充，如 HFJ8JQ5aAAAXUq_）
+    mk_to_basename = {}
+    for media in includes.get("media", []):
+        url = media.get("url", "") or media.get("preview_image_url", "")
+        if not url:
+            continue
+        m = re.search(r'/media/([^/?#]+?)\.(?:jpg|png|gif|webp|jpeg)(?:[?#]|$)', url, re.IGNORECASE)
+        if m:
+            mk_to_basename[media["media_key"]] = m.group(1)
+
+    # 主推文应显示的图：data.attachments.media_keys 对应的 basename
+    result["wanted_basenames"] = [mk_to_basename[k] for k in mk if k in mk_to_basename]
+
+    # embedded 应显示的图：referenced_tweets 对应推文的 media_keys 对应的 basename
+    ref_ids = [str(r.get("id", "")) for r in data.get("referenced_tweets", [])]
+    for t in includes.get("tweets", []):
+        if str(t.get("id", "")) in ref_ids:
+            t_mk = t.get("attachments", {}).get("media_keys", [])
+            for k in t_mk:
+                if k in mk_to_basename:
+                    result["embedded_basenames"].append(mk_to_basename[k])
+
+    # 主推文的冗余短链（要从文字里删除）：
+    #   - media_key 非空：图片/视频短链（图已直接显示，短链多余）
+    #   - expanded_url 含 /status/：引用预览短链（embedded 已显示）
+    # 普通分享链接（如网易云、网页）保留
+    seen_urls = set()
+    for u in data.get("entities", {}).get("urls", []):
+        url = u.get("url", "")
+        if not url or url in seen_urls:
+            continue
+        is_media = bool(u.get("media_key"))
+        is_status = '/status/' in u.get("expanded_url", "")
+        if is_media or is_status:
+            result["remove_urls"].append(url)
+            seen_urls.add(url)
+
+    # embedded 推文的冗余短链
+    seen_urls2 = set()
+    for t in includes.get("tweets", []):
+        if str(t.get("id", "")) not in ref_ids:
+            continue
+        for u in t.get("entities", {}).get("urls", []):
+            url = u.get("url", "")
+            if not url or url in seen_urls2:
+                continue
+            is_media = bool(u.get("media_key"))
+            is_status = '/status/' in u.get("expanded_url", "")
+            if is_media or is_status:
+                result["embedded_remove_urls"].append(url)
+                seen_urls2.add(url)
+
     return result
 
 
 def extract_from_html_fallback(html_text: str, fname: str) -> dict:
     result = {
-        "tweet_id":        extract_tweet_id_from_filename(fname),
-        "conversation_id": "",
-        "is_reply":        False,
-        "reply_to_id":     "",
-        "reply_type":      "",
-        "has_quoted":      False,
-        "quoted_id":       "",
-        "has_media":       False,
-        "media_keys":      [],
+        "tweet_id":            extract_tweet_id_from_filename(fname),
+        "conversation_id":     "",
+        "is_reply":            False,
+        "reply_to_id":         "",
+        "reply_type":          "",
+        "has_quoted":          False,
+        "quoted_id":           "",
+        "has_media":           False,
+        "media_keys":          [],
+        "wanted_basenames":    [],
+        "embedded_basenames":  [],
+        "remove_urls":         [],
+        "embedded_remove_urls":[],
     }
     soup = BeautifulSoup(html_text, "html.parser")
     nonjson = soup.find(id="nonjsonview")
@@ -310,13 +400,15 @@ def main():
 
     json_dir_exists = os.path.isdir(JSON_DIR)
     json_count = len([f for f in os.listdir(JSON_DIR) if f.endswith(".json")]) if json_dir_exists else 0
-    print(f"JSON 目录：{'存在' if json_dir_exists else '不存在'}，已有 {json_count} 个 JSON 文件\n")
+    print(f"JSON 目录：{'存在' if json_dir_exists else '不存在'}，已有 {json_count} 个 JSON 文件")
+
+    # 建立本地图片索引：basename → 相对路径
+    image_index = build_image_index()
+    print(f"本地图片索引：{len(image_index)} 张图片（按 basename 索引）\n")
 
     index_data = []
     no_date    = []
     no_json    = []
-    # 收集所有 embedded 中的外人推文数据，作为虚拟条目（仅当本地没有同ID的真实条目时加入）
-    # key: tweet_id, value: virtual record dict
     virtual_entries = {}
 
     for i, fname in enumerate(html_files, 1):
@@ -343,12 +435,32 @@ def main():
             no_json.append(fname)
             meta = extract_from_html_fallback(html_text, fname)
 
+        # 把 basename 转换成实际本地图片路径
+        wanted_images = [image_index[b] for b in meta.get("wanted_basenames", []) if b in image_index]
+        embedded_images = [image_index[b] for b in meta.get("embedded_basenames", []) if b in image_index]
+
+        # 清理 body_text 和 text 里的冗余短链（用于回复卡片直接展示）
+        # 用 meta["remove_urls"] 删除冗余短链，整理空格
+        def clean_urls(s, urls):
+            if not s or not urls:
+                return s
+            for u in urls:
+                s = s.replace(u, "")
+            # 整理空格：多个空格→1个，行尾空格删除，行首空格删除
+            s = re.sub(r'[ \t]{2,}', ' ', s)
+            s = re.sub(r'[ \t]+\n', '\n', s)
+            s = re.sub(r'\n[ \t]+', '\n', s)
+            return s.strip()
+
+        clean_body = clean_urls(render_data["body_text"], meta.get("remove_urls", []))
+        clean_text = clean_urls(text, meta.get("remove_urls", []))
+
         record = {
             "file":            fname,
             "timestamp":       iso_date,
             "date":            iso_date[:10],
             "time":            iso_date[11:19],
-            "text":            text,
+            "text":            clean_text,
             # 关系字段
             "tweet_id":        meta["tweet_id"],
             "conversation_id": meta["conversation_id"],
@@ -359,14 +471,22 @@ def main():
             "quoted_id":       meta["quoted_id"],
             "has_media":       meta["has_media"],
             "media_keys":      meta["media_keys"],
-            # 渲染字段（供 Reader.html 直接渲染回复卡片，无需 iframe）
+            # 渲染字段
             "author_name":     render_data["author_name"],
             "author_username": render_data["author_username"],
             "author_avatar":   render_data["author_avatar"],
-            "body_text":       render_data["body_text"],
-            # 图片：如果 media_keys 为空，说明本推文无媒体，
-            # 爬虫从被引用推文复制来的图片不属于本推文，过滤掉
+            "body_text":       clean_body,
+            # images：本推文（卡片渲染用，回复tab的展开卡片）的图列表
             "images":          render_data["images"] if meta.get("media_keys") else [],
+            # 新增字段：wanted_images / embedded_images（Reader.html 注入到 iframe）
+            #   - wanted_images：本推文外层应该显示的图（其他要隐藏，避免被引用推文的图错位显示）
+            #   - embedded_images：embedded 里应该插入的图（解决 embedded 只有短链没图的问题）
+            "wanted_images":     wanted_images,
+            "embedded_images":   embedded_images,
+            # 冗余短链：本推文/embedded 文字里要删除的 t.co 短链（图片占位+引用占位，不删普通分享链接）
+            # Reader.html 用于清理 iframe 内的文字（卡片渲染用的 body_text 已在上面清理过）
+            "remove_urls":         meta.get("remove_urls", []),
+            "embedded_remove_urls":meta.get("embedded_remove_urls", []),
             "is_virtual":      False,
         }
         index_data.append(record)
@@ -378,12 +498,14 @@ def main():
             # 只在尚未收集过这个 ID 时才加入（避免重复）
             if vid not in virtual_entries:
                 ts = emb.get("timestamp") or ""
+                # 清理虚拟条目里的冗余短链
+                emb_body = clean_urls(emb.get("body_text", ""), meta.get("embedded_remove_urls", []))[:TEXT_MAX]
                 virtual_entries[vid] = {
                     "file":            "",  # 虚拟条目无对应 html 文件
                     "timestamp":       ts,
                     "date":            ts[:10],
                     "time":            ts[11:19],
-                    "text":            emb.get("body_text", "")[:TEXT_MAX],
+                    "text":            emb_body,
                     "tweet_id":        vid,
                     "conversation_id": "",
                     "is_reply":        False,
@@ -396,7 +518,7 @@ def main():
                     "author_name":     emb.get("author_name", ""),
                     "author_username": emb.get("author_username", ""),
                     "author_avatar":   emb.get("author_avatar", ""),
-                    "body_text":       emb.get("body_text", ""),
+                    "body_text":       emb_body,
                     "images":          [],
                     "is_virtual":      True,
                 }

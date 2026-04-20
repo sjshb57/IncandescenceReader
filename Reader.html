@@ -1052,13 +1052,246 @@ function toggleReplies(toggleEl) {
 
 /* ── iframe 加载 ──────────────────────────────────────── */
 function onFrameLoad(iframe) {
-  autoHeight(iframe);
+  injectFitHeight(iframe);  // 先去掉 body min-height:100vh 让内容自适应
   injectTheme(iframe);
   // 推文tab展开的回复iframe：隐藏embedded-tweet-container（避免重复显示主推文内容）
   if (iframe.classList.contains('reply-iframe')) {
     injectHideEmbedded(iframe);
   }
+  // 所有iframe都做图片精确处理（基于 wanted_images / embedded_images）
+  fixImagesInFrame(iframe);
+  autoHeight(iframe);  // 处理完所有DOM操作后再算高度
 }
+
+/* iframe内嵌html的body有 min-height:100vh + padding:20px，会撑出大片空白
+   tweet-container 有 max-width:max-content，短推文会收缩成极窄
+   注入CSS让所有推文卡片宽度统一 */
+function injectFitHeight(iframe) {
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) return;
+    let s = doc.getElementById('__fit_height__');
+    if (!s) {
+      s = doc.createElement('style');
+      s.id = '__fit_height__';
+      doc.head.appendChild(s);
+    }
+    s.textContent = `
+      html { min-height:0!important; padding:0!important; margin:0!important; }
+      body { min-height:0!important; padding:0!important; margin:0!important; }
+      body > .tweet-container {
+        margin-top:0!important;
+        /* 原html里 .tweet-container 同时声明 max-width:100% 和 max-width:max-content
+           后者覆盖前者，导致短推文卡片收缩成极窄
+           恢复设计意图：固定 600px（和内部 #nonjsonview 一致），小屏时自适应 */
+        width:600px!important;
+        max-width:100%!important;
+        align-items:stretch!important;
+      }
+    `;
+  } catch(e) {}
+}
+
+/* ── 修复 iframe 内的图片显示 ────────────────────────────
+   爬虫bug：外层 tweet-image 可能包含被引用推文的图，embedded 永远没图
+   修复：用 index.json 里的 wanted_images / embedded_images 精确控制
+   ───────────────────────────────────────────────────────── */
+function fixImagesInFrame(iframe) {
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) return;
+    const src = iframe.src || '';
+    const fname = decodeURIComponent(src.split('/').pop() || '');
+    if (!fname) return;
+    const item = Object.values(idIndex).find(i => i.file === fname);
+    if (!item) return;
+
+    const nonjson = doc.getElementById('nonjsonview');
+    if (!nonjson) return;
+    const embedded = nonjson.querySelector('.embedded-tweet-container');
+
+    // 1. 处理外层图片：只保留 basename 在 wanted_images 里的
+    //    其他直接 remove（用 display:none 会留破图占位符的空白）
+    //    注意：必须用 img.tweet-image，不能用 .tweet-image，否则会误删 <video class="tweet-image tweet-video">
+    const wantedBasenames = (item.wanted_images || []).map(p => extractBasename(p));
+    const outerImgs = nonjson.querySelectorAll('.tweet-content > img.tweet-image');
+    outerImgs.forEach(img => {
+      // 确保不在 embedded 内
+      if (embedded && embedded.contains(img)) return;
+      const imgBn = extractBasename(img.getAttribute('src') || '');
+      if (!wantedBasenames.includes(imgBn)) {
+        img.remove();
+      }
+    });
+
+    // 2. 处理 embedded：插入 embedded_images 里的图（如果尚未插入）
+    if (embedded && item.embedded_images && item.embedded_images.length > 0) {
+      // 标记防止重复插入
+      if (!embedded.dataset.imgsInjected) {
+        const embContent = embedded.querySelector('.tweet-content');
+        if (embContent) {
+          // basename 去重（避免 embedded_images 里有重复的）
+          const seen = new Set();
+          item.embedded_images.forEach(p => {
+            const bn = extractBasename(p);
+            if (seen.has(bn)) return;
+            seen.add(bn);
+            const img = doc.createElement('img');
+            img.className = 'tweet-image';
+            // 路径：相对路径如 "../image/xxx.jpg"，iframe 里的相对位置就是 html/ 下，
+            // 所以 ../image/ 正好指向 wayback_snapshots/image/
+            img.src = p;
+            img.loading = 'lazy';
+            embContent.appendChild(img);
+          });
+          embedded.dataset.imgsInjected = '1';
+        }
+      }
+    }
+
+    // 3. 清理冗余短链（图片占位+引用占位的 t.co 链接，普通分享链接保留）
+    removeShortlinksInFrame(nonjson, embedded, item);
+
+    // 4. 折叠 embedded（默认收起，避免引用框内大图占用过多垂直空间）
+    //    reply-iframe 已经把整个 embedded 隐藏了，不需要折叠
+    if (embedded && !iframe.classList.contains('reply-iframe')) {
+      collapseEmbedded(doc, embedded, iframe);
+    }
+
+    setTimeout(() => autoHeight(iframe), 80);
+  } catch(e) {}
+}
+
+/* 折叠 embedded-tweet-container：默认收起为一行摘要，点击展开
+   解决引用推文图片过大占满屏幕的问题 */
+function collapseEmbedded(doc, embedded, iframe) {
+  if (embedded.dataset.collapseInited) return;
+  embedded.dataset.collapseInited = '1';
+
+  // 提取摘要数据
+  const author = embedded.querySelector('.tweet-author-username');
+  const content = embedded.querySelector('.tweet-content');
+  const username = author ? author.textContent.trim() : '@用户';
+  // 取文字前40字（去掉首尾空白和换行）
+  let snippetText = '';
+  if (content) {
+    snippetText = content.textContent.replace(/\s+/g, ' ').trim();
+    // 去掉末尾的 t.co 短链（如果还在）
+    snippetText = snippetText.replace(/\s*https?:\/\/t\.co\/\S+\s*$/i, '');
+    if (snippetText.length > 40) snippetText = snippetText.slice(0, 40) + '…';
+  }
+
+  // 创建折叠条
+  const bar = doc.createElement('div');
+  bar.className = '__emb_bar__';
+  bar.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    margin-top: 10px;
+    border: 1px solid #cfd9de;
+    border-radius: 12px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 14px;
+    transition: background .12s;
+  `;
+  bar.innerHTML = `
+    <span style="color:#1d9bf0;font-size:12px;flex-shrink:0;">▶</span>
+    <span style="color:#1d9bf0;font-weight:600;flex-shrink:0;">引用</span>
+    <span style="font-weight:500;flex-shrink:0;">${escapeHtml(username)}</span>
+    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;opacity:.8;">·&nbsp;${escapeHtml(snippetText)}</span>
+  `;
+
+  // 默认隐藏 embedded，显示折叠条
+  embedded.style.display = 'none';
+  embedded.parentNode.insertBefore(bar, embedded);
+
+  // 点击切换
+  bar.addEventListener('click', () => {
+    const isCollapsed = embedded.style.display === 'none';
+    if (isCollapsed) {
+      embedded.style.display = '';
+      bar.querySelector('span').textContent = '▼';
+    } else {
+      embedded.style.display = 'none';
+      bar.querySelector('span').textContent = '▶';
+    }
+    // 高度变化，重算iframe高度
+    setTimeout(() => autoHeight(iframe), 20);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* 从图片相对路径里提取 basename（如 G7F7hTpaIAEw53d 或 HFJ8JQ5aAAAXUq_）
+   路径形如 ../image/20260317142640_..._media_BASENAME_jpg.jpg
+   或 ../image/20260317142640_..._media_BASENAME.jpg
+   注意：BASENAME 可能含下划线（Twitter 媒体ID会用下划线作填充） */
+function extractBasename(src) {
+  if (!src) return '';
+  // 优先匹配 _media_BASENAME_ext.ext 格式（双扩展），basename 用非贪婪匹配
+  let m = src.match(/_media_(.+?)_(?:jpg|png|gif|webp|jpeg)\.(?:jpg|png|gif|webp|jpeg)(?:[?#]|$)/i);
+  if (m) return m[1];
+  // 兜底：单扩展
+  m = src.match(/_media_(.+?)\.(?:jpg|png|gif|webp|jpeg)(?:[?#]|$)/i);
+  return m ? m[1] : '';
+}
+
+/* 从 iframe 里删除冗余的 t.co 短链文字（保留普通分享链接） */
+function removeShortlinksInFrame(nonjson, embedded, item) {
+  const removeFromContent = (contentEl, urls, isEmbedded) => {
+    if (!contentEl || !urls || !urls.length) return;
+    if (contentEl.dataset.urlsCleaned) return;
+    // 收集所有文本节点
+    // 注意：清理主推文时要跳过 embedded 内部的节点（避免清错地方）
+    //       清理 embedded 时不需要这个保护（contentEl 本身就在 embedded 内）
+    const walker = contentEl.ownerDocument.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => {
+        if (!isEmbedded && embedded && embedded.contains(n)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const textNodes = [];
+    let n;
+    while ((n = walker.nextNode())) textNodes.push(n);
+    for (const node of textNodes) {
+      let v = node.nodeValue;
+      let changed = false;
+      for (const url of urls) {
+        if (v.includes(url)) {
+          v = v.split(url).join('');
+          changed = true;
+        }
+      }
+      if (changed) {
+        v = v.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/[ \t]+$/g, '');
+        node.nodeValue = v;
+      }
+    }
+    contentEl.dataset.urlsCleaned = '1';
+  };
+
+  // 主推文：第一个不在 embedded 内的 .tweet-content
+  const allContents = nonjson.querySelectorAll('.tweet-content');
+  for (const c of allContents) {
+    if (embedded && embedded.contains(c)) continue;
+    removeFromContent(c, item.remove_urls || [], false);
+    break;
+  }
+  // embedded 推文
+  if (embedded) {
+    const embContent = embedded.querySelector('.tweet-content');
+    if (embContent) removeFromContent(embContent, item.embedded_remove_urls || [], true);
+  }
+}
+
+/* 从 iframe 里删除冗余的 t.co 短链文字（保留普通分享链接） END */
 
 function injectHideEmbedded(iframe) {
   try {
@@ -1070,31 +1303,7 @@ function injectHideEmbedded(iframe) {
       s.id = '__hide_embedded__';
       doc.head.appendChild(s);
     }
-    // 隐藏 embedded-tweet-container（避免重复显示被引用/被回复推文的内容）
     s.textContent = `.embedded-tweet-container { display: none !important; }`;
-
-    // 额外处理：回复推文的 tweet-content 里可能有爬虫从主推文复制来的图片
-    // 判断依据：该 iframe 对应的 item 在 index.json 中 media_keys=[]
-    // 说明这条推文本身没有媒体，外层的 tweet-image 是多余的，直接移除
-    const src = iframe.src || '';
-    const fname = src.split('/').pop();
-    const item = fname ? Object.values(idIndex).find(i => i.file === fname) : null;
-    if (item && item.media_keys && item.media_keys.length === 0) {
-      // 这条推文本身无媒体，删除外层 tweet-content 里的所有 tweet-image
-      const nonjson = doc.getElementById('nonjsonview');
-      if (nonjson) {
-        const embedded = nonjson.querySelector('.embedded-tweet-container');
-        // 只删除在 embedded 之前（即外层）的 tweet-image
-        const allImgs = nonjson.querySelectorAll('.tweet-content > .tweet-image');
-        allImgs.forEach(img => {
-          // 确认图片不在 embedded 内部
-          if (!embedded || !embedded.contains(img)) {
-            img.remove();
-          }
-        });
-      }
-    }
-
     setTimeout(() => autoHeight(iframe), 80);
   } catch(e) {}
 }
@@ -1103,6 +1312,11 @@ function autoHeight(iframe) {
   try {
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
     if (!doc) return;
+    // 先把 iframe 高度设为 0，强制 body 重新计算内容高度
+    // 否则当 embedded 展开又收回时，scrollHeight 会保留之前展开时的较大值
+    iframe.style.height = '0px';
+    // 读取一次 offsetHeight 强制 reflow
+    void doc.documentElement.offsetHeight;
     const h = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
     iframe.style.height = (h + 4) + 'px';
   } catch(e) { iframe.style.height = '400px'; }
@@ -1127,7 +1341,9 @@ function writeTheme(doc, light) {
       .embedded-tweet-container{background:#ffffff!important;border-color:#eff3f4!important}
       .tweet-content,.tweet-author-name{color:#0f1419!important}
       .tweet-author-username,.date,.date a{color:#536471!important}
-      a{color:#1d9bf0!important}`;
+      a{color:#1d9bf0!important}
+      .__emb_bar__{background:rgba(29,155,240,0.04)!important;border-color:#cfd9de!important;color:#536471!important}
+      .__emb_bar__:hover{background:rgba(29,155,240,0.1)!important}`;
   } else {
     s.textContent = `
       html,body{background:#000000!important;color:#e7e9ea!important}
@@ -1135,7 +1351,9 @@ function writeTheme(doc, light) {
       .embedded-tweet-container{background:#000000!important;border-color:#2f3336!important}
       .tweet-content,.tweet-author-name{color:#e7e9ea!important}
       .tweet-author-username,.date,.date a{color:#71767b!important}
-      a{color:#1d9bf0!important}`;
+      a{color:#1d9bf0!important}
+      .__emb_bar__{background:rgba(29,155,240,0.08)!important;border-color:#2f3336!important;color:#71767b!important}
+      .__emb_bar__:hover{background:rgba(29,155,240,0.16)!important}`;
   }
   setTimeout(()=>{
     document.querySelectorAll('.post-iframe,.reply-iframe').forEach(f=>{
@@ -1168,42 +1386,23 @@ function setupCustomScrollbar() {
     }, 1200);
   }
 
-  function updateThumb(speedExtra = 0) {
+  function updateThumb() {
     const trackH = bar.clientHeight - 8;
     const ratio  = col.clientHeight / col.scrollHeight;
     const baseH  = Math.max(30, trackH * ratio);
-    // 速度越快thumb越长，最多额外增加trackH*0.35
-    const totalH = Math.min(baseH + speedExtra, baseH + trackH * 0.35);
     const scrollRatio = col.scrollTop / Math.max(1, col.scrollHeight - col.clientHeight);
-    // thumb变长时向上偏移，保持视觉中心稳定
-    const thumbTop = 4 + scrollRatio * (trackH - totalH);
-    thumb.style.height     = totalH + 'px';
-    thumb.style.top        = Math.max(4, thumbTop) + 'px';
-    thumb.style.transition = speedExtra > 0
-      ? 'height .1s ease, top .1s ease, background .15s, width .15s, left .15s'
-      : 'height .3s ease, top .1s ease, background .15s, width .15s, left .15s';
+    const thumbTop = 4 + scrollRatio * (trackH - baseH);
+    thumb.style.height = baseH + 'px';
+    thumb.style.top    = Math.max(4, thumbTop) + 'px';
+    // 不加 transition，让 top/height 立即响应（避免拖动慢半拍）
+    // 颜色和宽度的过渡保留在 CSS 类里，不用 inline style
+    thumb.style.transition = 'background .15s, width .15s, left .15s';
   }
 
   col.addEventListener('scroll', () => {
-    const now      = performance.now();
-    const dt       = now - lastScrollTime;
-    const dy       = Math.abs(col.scrollTop - lastScrollTop);
-    lastScrollTop  = col.scrollTop;
-    lastScrollTime = now;
-
-    // 速度 px/ms
-    const speed = dt > 0 ? dy / dt : 0;
-    // 慢速几乎不变，快速才明显变长，封顶40px
-    const extra = Math.min(Math.sqrt(speed) * 10, 40);
-
-    updateThumb(extra);
+    // 不再做速度感应弹性，thumb 始终保持原始长度
+    updateThumb(0);
     showBar();
-
-    // 停止滚动后200ms平滑收缩回原始长度
-    clearTimeout(velocityTimer);
-    velocityTimer = setTimeout(() => {
-      updateThumb(0);
-    }, 200);
   });
 
   col.addEventListener('mouseenter', () => { updateThumb(0); showBar(); });
@@ -1219,11 +1418,33 @@ function setupCustomScrollbar() {
     dragStartY = e.clientY;
     dragStartScrollTop = col.scrollTop;
     thumb.classList.add('dragging');
+    // 拖动时盖一层透明遮罩，覆盖整个页面（包括iframe），
+    // 防止 mouseup 在 iframe 内被吞掉导致 isDragging 状态错乱
+    let overlay = document.getElementById('__drag_overlay__');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = '__drag_overlay__';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;cursor:default;background:transparent;';
+      document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'block';
     e.preventDefault();
   });
 
+  function endDragging() {
+    if (isDragging) {
+      isDragging = false;
+      thumb.classList.remove('dragging');
+      const overlay = document.getElementById('__drag_overlay__');
+      if (overlay) overlay.style.display = 'none';
+      hideTimer = setTimeout(() => bar.classList.remove('visible'), 1200);
+    }
+  }
+
   document.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
+    // 兜底：如果鼠标按键已经松开（buttons==0）但事件没触发，也结束拖动
+    if (e.buttons === 0) { endDragging(); return; }
     // 正确的拖动映射：
     //   鼠标移动 Y px → thumb 应该跟随移动 Y px（1:1跟手）
     //   thumb 可移动范围 = trackH - thumbH
@@ -1239,13 +1460,9 @@ function setupCustomScrollbar() {
     showBar();
   });
 
-  document.addEventListener('mouseup', () => {
-    if (isDragging) {
-      isDragging = false;
-      thumb.classList.remove('dragging');
-      hideTimer = setTimeout(() => bar.classList.remove('visible'), 1200);
-    }
-  });
+  document.addEventListener('mouseup',    endDragging);
+  document.addEventListener('mouseleave', endDragging);  // 鼠标离开窗口
+  window.addEventListener('blur',         endDragging);  // 窗口失焦
 
   bar.addEventListener('click', (e) => {
     if (e.target === thumb) return;
