@@ -245,15 +245,85 @@ a:hover { text-decoration: underline; }
   color: var(--text); font-size: 16px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: background .15s;
+  -webkit-tap-highlight-color: transparent;
 }
 .theme-toggle-btn:hover { background: var(--bg-hover); }
+.theme-toggle-btn:focus,
+.theme-toggle-btn:focus-visible { outline: none; }
+
+/* 账号切换按钮（在主题按钮左边） */
+.account-switch-btn {
+  position: absolute; top: 12px; right: 60px;
+  height: 34px; padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  /* 默认半透明主题色背景：banner 上能透出底图，但文字仍清晰 */
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  transition: background .15s;
+  max-width: 180px;
+  -webkit-tap-highlight-color: transparent;
+}
+.account-switch-btn:hover { background: var(--bg-hover); }
+.account-switch-btn:focus,
+.account-switch-btn:focus-visible { outline: none; }
+.account-switch-btn .mini-name {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 130px;
+}
+.account-switch-btn .arr { color: var(--text-dim); font-size: 10px; flex-shrink: 0; }
+
+/* 账号选择弹层 */
+.account-popup {
+  position: absolute; top: 54px; right: 16px;
+  width: 280px; max-width: calc(100vw - 32px);
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  z-index: 50;
+  overflow: hidden;
+  display: none;
+}
+.account-popup.open { display: block; }
+.account-popup-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
+}
+.account-popup-item:last-of-type { border-bottom: none; }
+.account-popup-item:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.account-popup-item.current { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+/* 当鼠标在弹层上时：只有被 hover 的那项保持蓝色，当前账号项让出高亮 */
+.account-popup:hover .account-popup-item.current:not(:hover) { background: transparent; }
+.account-popup-item .a-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--banner-bg); flex-shrink: 0; object-fit: cover;
+}
+.account-popup-item .a-info { flex: 1; min-width: 0; }
+.account-popup-item .a-name {
+  font-weight: 700; font-size: 14px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.account-popup-item .a-handle {
+  color: var(--text-dim); font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.account-popup-item .a-tick { color: var(--accent); font-weight: 700; font-size: 14px; }
+.account-popup-empty {
+  padding: 14px; color: var(--text-dim); font-size: 13px;
+  text-align: center;
+}
 .avatar-img {
-  width: 80px; height: 80px; border-radius: 50%;
+  width: 134px; height: 134px; border-radius: 50%;
   border: 4px solid var(--avatar-border);
-  position: absolute; top: -45px; left: 16px;
+  position: absolute; top: -67px; left: 16px;
   background: var(--banner-bg); object-fit: cover; display: block;
 }
-.profile-names  { margin-top: 44px; }
+.profile-names  { margin-top: 72px; }
 .p-name         { font-size: 20px; font-weight: 800; display: block; color: var(--text); }
 .p-user         { color: var(--text-dim); font-size: 15px; }
 .p-bio          { margin: 12px 0 8px; font-size: 15px; color: var(--text); line-height: 1.5; white-space: pre-wrap; }
@@ -563,13 +633,239 @@ body.light .post-iframe-wrap { background: #ffffff; }
 .credit-box b { color: var(--text); }
 
 @media (max-width: 1100px) { .right-panel { display: none; } }
-@media (max-width: 900px)  { .sidebar { width: 200px; } .main-col-wrap { width: auto; flex: 1; } }
+/* 平板（901-1100px）：侧边栏窄一点 */
+@media (min-width: 901px) and (max-width: 1100px) { .sidebar { width: 200px; } .main-col-wrap { width: auto; flex: 1; } }
+
+/* ════════════════════════════════════════════════════════
+   手机端适配（≤640px）：单列布局 + 抽屉式日期树
+════════════════════════════════════════════════════════ */
+.menu-toggle {
+  display: none;  /* 默认隐藏，手机模式才出现 */
+}
+.sidebar-overlay {
+  display: none;  /* 默认隐藏的遮罩 */
+}
+
+@media (max-width: 900px) {
+  /* 主列占满宽度 */
+  .layout { max-width: 100%; }
+  .main-col-wrap { width: 100%; }
+  .main-col {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  /* ───── Profile 头部（贴近 Twitter 手机端布局）───── */
+  .banner { height: 170px; }
+
+  .profile-info {
+    padding: 8px 14px 12px;
+  }
+  /* 头像：和 Twitter 移动端比例一致，约占 banner 高度的 60%
+     手机 100×100（3px边框=106×106，-55px 让一半压在 banner 上）*/
+  .avatar-img {
+    width: 100px;
+    height: 100px;
+    border-width: 3px;
+    top: -55px;
+    left: 14px;
+  }
+  /* 姓名行紧贴头像下方 */
+  .profile-names {
+    margin-top: 56px;   /* 头像露出在 banner 下方的 50px + 一点呼吸 */
+  }
+  .p-name {
+    font-size: 17px;
+    line-height: 1.25;
+  }
+  .p-user {
+    font-size: 14px;
+  }
+  .p-bio {
+    margin: 10px 0 6px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .p-meta {
+    font-size: 13px;
+    gap: 12px;
+  }
+
+  /* 主题按钮：和头像在同一水平位置 banner 下方右侧 */
+  .theme-toggle-btn {
+    width: 32px; height: 32px; font-size: 16px;
+    top: 14px; right: 14px;
+  }
+
+  /* 搜索框 + tab 内边距收缩 */
+  .search-area { padding-left: 4px; padding-right: 12px; }
+  .tab-bar, .day-topbar { padding-left: 12px; padding-right: 12px; }
+  .day-topbar { padding-top: 12px; padding-bottom: 8px; }
+  .day-heading { font-size: 16px; }
+
+  /* 内容区给一点呼吸 */
+  .content-area { padding: 0 8px 24px; }
+
+  /* 自定义滚动条隐藏，让用户用原生滚动 */
+  .custom-scrollbar { display: none; }
+  .main-col {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 侧边栏变抽屉：默认在屏幕外，开启时滑入 */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 78%;
+    max-width: 320px;
+    height: 100vh;
+    z-index: 1000;
+    background: var(--bg);
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  /* 抽屉遮罩 */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .sidebar-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ───── 汉堡按钮（共用基础样式）─────
+     默认完全无边框无背景，只显示三条浅线
+     悬停/激活/抽屉打开时才有微弱背景 */
+  .menu-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    cursor: pointer;
+    line-height: 1;
+    transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    padding: 0;
+  }
+  /* 状态A：banner 上的汉堡按钮（absolute 定位、跟随滚动） */
+  .menu-toggle-banner {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 5;  /* 高于 banner 但不影响主题按钮 */
+  }
+  /* 状态B：搜索栏内的汉堡按钮（默认隐藏，搜索栏吸顶时由 JS 显示）
+     大小和 banner 上的一样（36×36），只调整间距让搜索框靠左 */
+  .menu-toggle-search {
+    display: none;
+    flex-shrink: 0;
+    margin-right: 0;     /* 取消和搜索框之间的间距 */
+    margin-left: -4px;   /* 往左挤一点 */
+  }
+  /* 三条线 —— banner 是用户自定义图片不随主题切换
+     固定用深灰，无论主题切换都不变 */
+  .menu-toggle-banner::before {
+    content: "";
+    display: block;
+    width: 17px;
+    height: 1.5px;
+    background: rgba(40, 40, 40, 0.85);
+    box-shadow:
+      0 -5px 0 rgba(40, 40, 40, 0.85),
+      0 5px 0 rgba(40, 40, 40, 0.85);
+    border-radius: 1px;
+    transition: background 0.15s, box-shadow 0.15s;
+  }
+  /* 搜索栏按钮（不在 banner 上）：暗色默认白线，浅色主题改深线 */
+  .menu-toggle-search::before {
+    content: "";
+    display: block;
+    width: 17px;
+    height: 1.5px;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow:
+      0 -5px 0 rgba(255, 255, 255, 0.85),
+      0 5px 0 rgba(255, 255, 255, 0.85);
+    border-radius: 1px;
+    transition: background 0.15s, box-shadow 0.15s;
+  }
+  body.light .menu-toggle-search::before {
+    background: rgba(40, 40, 40, 0.9);
+    box-shadow:
+      0 -5px 0 rgba(40, 40, 40, 0.9),
+      0 5px 0 rgba(40, 40, 40, 0.9);
+  }
+
+  /* 点击/激活：浅淡背景 + 三条线变深更鲜明 */
+  .menu-toggle:active,
+  .menu-toggle.active {
+    background: rgba(0, 0, 0, 0.12);
+  }
+  .menu-toggle:active::before,
+  .menu-toggle.active::before {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow:
+      0 -5px 0 rgba(255, 255, 255, 0.95),
+      0 5px 0 rgba(255, 255, 255, 0.95);
+  }
+  body.light .menu-toggle:active,
+  body.light .menu-toggle.active {
+    background: rgba(0, 0, 0, 0.08);
+  }
+  body.light .menu-toggle:active::before,
+  body.light .menu-toggle.active::before {
+    background: rgba(20, 20, 20, 0.9);
+    box-shadow:
+      0 -5px 0 rgba(20, 20, 20, 0.9),
+      0 5px 0 rgba(20, 20, 20, 0.9);
+  }
+
+  /* 当 .stuck 类加到 sticky-area 上时（JS 检测搜索栏吸顶），
+     显示搜索栏按钮 */
+  .sticky-area.stuck .menu-toggle-search {
+    display: flex;
+  }
+
+  /* 搜索栏布局：让按钮和输入框水平排列 */
+  .search-area {
+    display: flex;
+    align-items: center;
+  }
+  .search-inner {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .profile-header { position: relative; }
+}
 
 @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 .anim { animation: fadeUp .2s ease both; }
 </style>
 </head>
 <body>
+
+<!-- 手机端抽屉的遮罩（仅 ≤640px 显示） -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 
 <div class="layout">
 
@@ -595,8 +891,17 @@ body.light .post-iframe-wrap { background: #ffffff; }
 
       <div class="profile-header">
         <img class="banner" id="p-banner" src="" alt="">
+        <!-- 手机端：banner 上的汉堡按钮（跟随滚动） -->
+        <button class="menu-toggle menu-toggle-banner" id="menu-toggle-banner" aria-label="打开菜单" onclick="toggleSidebar()"></button>
         <div class="profile-info">
           <button class="theme-toggle-btn" id="theme-btn" onclick="toggleTheme()">🌙</button>
+          <!-- 账号切换按钮（多账号场景才显示） -->
+          <button class="account-switch-btn" id="account-switch-btn" style="display:none" onclick="toggleAccountPopup(event)">
+            <span class="mini-name" id="account-switch-name">账号</span>
+            <span class="arr">▼</span>
+          </button>
+          <!-- 账号弹层 -->
+          <div class="account-popup" id="account-popup"></div>
           <img class="avatar-img" id="p-avatar" src="" alt="">
           <div class="profile-names">
             <span class="p-name"    id="p-name">炽烈已极</span>
@@ -613,6 +918,8 @@ body.light .post-iframe-wrap { background: #ffffff; }
       <!-- 搜索 + Tab 吸顶区域 -->
       <div class="sticky-area">
         <div class="search-area">
+          <!-- 手机端：吸顶后显示在搜索栏左侧的汉堡按钮 -->
+          <button class="menu-toggle menu-toggle-search" id="menu-toggle-search" aria-label="打开菜单" onclick="toggleSidebar()"></button>
           <div class="search-inner">
             <span class="search-icon">🔍</span>
             <input type="text" id="search-input" placeholder="搜索关键词或日期…" autocomplete="off" spellcheck="false">
@@ -634,7 +941,7 @@ body.light .post-iframe-wrap { background: #ffffff; }
         <div class="welcome">
           <div class="welcome-icon">✦</div>
           <div class="welcome-title">档案已就绪</div>
-          <div class="welcome-hint">从左侧选择日期，或在上方搜索关键词</div>
+          <div class="welcome-hint">选择日期浏览，或在上方搜索关键词</div>
         </div>
       </div>
 
@@ -677,10 +984,37 @@ body.light .post-iframe-wrap { background: #ffffff; }
 </div>
 
 <script>
-const DB_PATH      = 'incr://local/wayback_snapshots/index.json';
-const PROFILE_PATH = 'incr://local/wayback_snapshots/profile.json';
-const HTML_BASE    = 'incr://local/wayback_snapshots/html/';
-const ASSET_BASE   = 'incr://local/wayback_snapshots/';
+// 路径前缀（多账号支持）：根据当前账号 dir 动态调整
+// Electron 走 incr://local/ 协议；当只有一个账号时账号清单为空，等同单账号场景
+// _accounts 是 main.js 暴露的虚拟路径，会动态扫 accounts/ 下所有子目录的 profile.json
+const ACCOUNTS_LIST_PATH = 'incr://local/_accounts';
+let ACCOUNT_BASE   = 'incr://local/';                       // 资源根
+let DB_PATH        = 'incr://local/wayback_snapshots/index.json';
+let PROFILE_PATH   = 'incr://local/wayback_snapshots/profile.json';
+let HTML_BASE      = 'incr://local/wayback_snapshots/html/';
+let ASSET_BASE     = 'incr://local/wayback_snapshots/';
+
+// 多账号状态
+let accounts       = [];       // 加载到的账号清单
+let currentAccount = null;     // 当前账号对象（accounts 里的某一项）
+
+function applyAccountPaths(acct) {
+  if (acct && acct.dir) {
+    const prefix = `incr://local/accounts/${acct.dir}/`;
+    ACCOUNT_BASE = prefix;
+    DB_PATH      = prefix + 'wayback_snapshots/index.json';
+    PROFILE_PATH = prefix + 'wayback_snapshots/profile.json';
+    HTML_BASE    = prefix + 'wayback_snapshots/html/';
+    ASSET_BASE   = prefix + 'wayback_snapshots/';
+  } else {
+    // 单账号兜底：旧目录结构
+    ACCOUNT_BASE = 'incr://local/';
+    DB_PATH      = 'incr://local/wayback_snapshots/index.json';
+    PROFILE_PATH = 'incr://local/wayback_snapshots/profile.json';
+    HTML_BASE    = 'incr://local/wayback_snapshots/html/';
+    ASSET_BASE   = 'incr://local/wayback_snapshots/';
+  }
+}
 
 let db        = [];
 let treeData  = {};
@@ -689,6 +1023,7 @@ let ascending = false;
 let searchMode= false;
 let isLight   = false;
 let activeTab = 'tweets';
+let ownerUsername = '';  // 当前账号 username（去 @ 转小写），用于识别"主人 vs 外人"
 
 // tweet_id → item 的索引（用于快速查找回复关系）
 let idIndex  = {};
@@ -699,7 +1034,107 @@ let replyMap = {};
 async function init() {
   if (localStorage.getItem('reader-theme') === 'light') applyTheme(true, false);
   setupCustomScrollbar();
+  // 先尝试加载账号清单
+  await loadAccounts();
+  await loadCurrentAccount();
+}
+
+/* ── 多账号 ─────────────────────────────────────────── */
+async function loadAccounts() {
+  try {
+    const r = await fetch(ACCOUNTS_LIST_PATH);
+    if (!r.ok) return;
+    const list = await r.json();
+    if (!Array.isArray(list) || list.length === 0) return;
+    accounts = list;
+    // 决定当前账号：localStorage > 第一个
+    const remembered = localStorage.getItem('reader-account');
+    currentAccount = (remembered && accounts.find(a => a.dir === remembered)) || accounts[0];
+    applyAccountPaths(currentAccount);
+    renderAccountSwitcher();
+  } catch (e) {
+    // accounts.json 不存在 → 单账号模式（默认路径已经是兼容的）
+    console.info('accounts.json 不存在，使用单账号模式');
+  }
+}
+
+async function loadCurrentAccount() {
+  // 加载 profile + index
   await Promise.all([loadProfile(), loadIndex()]);
+}
+
+function renderAccountSwitcher() {
+  if (accounts.length < 2) {
+    // 只有 1 个账号或没有 accounts.json → 不显示切换按钮
+    document.getElementById('account-switch-btn').style.display = 'none';
+    return;
+  }
+  const btn = document.getElementById('account-switch-btn');
+  btn.style.display = 'flex';
+  if (currentAccount) {
+    document.getElementById('account-switch-name').textContent = currentAccount.name || currentAccount.username;
+  }
+  // 渲染弹层
+  const popup = document.getElementById('account-popup');
+  const stripAt = (s) => (s || '').replace(/^@/, '');
+  popup.innerHTML = accounts.map(a => `
+    <div class="account-popup-item ${currentAccount && a.dir === currentAccount.dir ? 'current' : ''}" onclick="switchAccount('${esc(a.dir)}')">
+      <img class="a-avatar" src="${a.avatar ? 'incr://local/' + esc(a.avatar) : ''}" alt="" onerror="this.style.background='var(--banner-bg)';this.removeAttribute('src')">
+      <div class="a-info">
+        <div class="a-name">${esc(a.name || stripAt(a.username))}</div>
+        <div class="a-handle">@${esc(stripAt(a.username))}</div>
+      </div>
+      ${currentAccount && a.dir === currentAccount.dir ? '<span class="a-tick">✓</span>' : ''}
+    </div>
+  `).join('');
+}
+
+function toggleAccountPopup(e) {
+  if (e) e.stopPropagation();
+  const popup = document.getElementById('account-popup');
+  popup.classList.toggle('open');
+}
+
+// 点击别处关闭弹层
+document.addEventListener('click', (e) => {
+  const popup = document.getElementById('account-popup');
+  const btn = document.getElementById('account-switch-btn');
+  if (popup && popup.classList.contains('open') && !popup.contains(e.target) && !btn.contains(e.target)) {
+    popup.classList.remove('open');
+  }
+});
+
+async function switchAccount(dir) {
+  const acct = accounts.find(a => a.dir === dir);
+  if (!acct || (currentAccount && acct.dir === currentAccount.dir)) {
+    document.getElementById('account-popup').classList.remove('open');
+    return;
+  }
+  currentAccount = acct;
+  applyAccountPaths(acct);
+  localStorage.setItem('reader-account', acct.dir);
+  document.getElementById('account-popup').classList.remove('open');
+
+  // 重置状态
+  db = []; treeData = {}; idIndex = {}; replyMap = {};
+  activeDay = null; searchMode = false;
+  document.getElementById('search-input').value = '';
+  // 主内容区恢复欢迎页（避免显示上个账号的内容残留或空白）
+  const dayHeading = document.getElementById('day-heading');
+  if (dayHeading) dayHeading.textContent = '选择日期浏览';
+  const area = document.getElementById('content-area');
+  if (area) area.innerHTML = `
+      <div class="welcome">
+        <div class="welcome-icon">✦</div>
+        <div class="welcome-title">档案已就绪</div>
+        <div class="welcome-hint">从左侧选择日期，或在上方搜索关键词</div>
+      </div>`;
+  // 移除日期树上一个账号的高亮
+  document.querySelectorAll('.tree-day.active').forEach(el => el.classList.remove('active'));
+
+  // 更新按钮显示 + 重新加载数据
+  renderAccountSwitcher();
+  await loadCurrentAccount();
 }
 
 /* ── Profile ──────────────────────────────────────────── */
@@ -711,8 +1146,10 @@ async function loadProfile() {
     document.getElementById('p-name').textContent     = c.name     || '';
     document.getElementById('p-username').textContent = c.username || '';
     document.getElementById('p-bio').textContent      = c.bio      || '';
-    if (c.avatar) document.getElementById('p-avatar').src = `incr://local/wayback_snapshots/${c.avatar}`;
-    if (c.banner) document.getElementById('p-banner').src = `incr://local/wayback_snapshots/${c.banner}`;
+    // 保存当前账号 username（去 @ 转小写）—— 用于 reply-card 识别主人 vs 外人
+    ownerUsername = (c.username || '').replace(/^@/, '').toLowerCase();
+    if (c.avatar) document.getElementById('p-avatar').src = `${ASSET_BASE}${c.avatar}`;
+    if (c.banner) document.getElementById('p-banner').src = `${ASSET_BASE}${c.banner}`;
     if (c.location) document.getElementById('p-loc').innerHTML  = `📍 ${esc(c.location)}`;
     if (c.link) {
       const d = c.link.replace(/^https?:\/\//,'');
@@ -822,8 +1259,55 @@ function toggle(id){ document.getElementById(id).classList.toggle('open'); }
 function expandAll() { document.querySelectorAll('.tree-year,.tree-month').forEach(e=>e.classList.add('open')); }
 function collapseAll(){ document.querySelectorAll('.tree-year,.tree-month').forEach(e=>e.classList.remove('open')); }
 
+/* ── 手机端抽屉控制（≤640px）─────────────────────────── */
+function isMobile() { return window.matchMedia('(max-width: 900px)').matches; }
+function toggleSidebar() {
+  const sb = document.querySelector('.sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  const open = sb.classList.toggle('open');
+  ov.classList.toggle('show', open);
+}
+function closeSidebar() {
+  document.querySelector('.sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('show');
+}
+/* 选中日期后自动收起抽屉（仅手机端） */
+function autoCloseSidebarOnMobile() {
+  if (isMobile()) closeSidebar();
+}
+
+/* 搜索栏吸顶检测：在 sticky-area 上方放一个 1px 的 sentinel，
+   当它滚出视口顶部时说明 sticky-area 已经吸顶——给 sticky-area 加 .stuck 类。
+   .stuck 的 CSS 会在手机模式下显示搜索栏内的汉堡按钮。 */
+function setupStickyDetector() {
+  const sticky = document.querySelector('.sticky-area');
+  if (!sticky || !window.IntersectionObserver) return;
+
+  // sentinel：紧贴 sticky-area 上方
+  const sentinel = document.createElement('div');
+  sentinel.style.cssText = 'height:1px;width:100%;';
+  sticky.parentNode.insertBefore(sentinel, sticky);
+
+  // 监测主列的滚动容器（手机端是 .main-col 自己滚动）
+  const root = document.getElementById('main-col');
+
+  const obs = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      // sentinel 不在视口里 -> sticky-area 已吸顶
+      sticky.classList.toggle('stuck', !e.isIntersecting);
+    }
+  }, { root: root, threshold: 0 });
+  obs.observe(sentinel);
+}
+/* 页面加载完后启动 */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupStickyDetector);
+} else {
+  setupStickyDetector();
+}
+
 /* ── 日视图 ───────────────────────────────────────────── */
-function selectDay(dk) {
+function selectDay(dk, skipScroll = false) {
   if (searchMode) exitSearch();
   activeDay = dk;
   document.querySelectorAll('.day-row').forEach(e=>e.classList.remove('active'));
@@ -840,6 +1324,11 @@ function selectDay(dk) {
   document.getElementById('day-heading').innerHTML =
     `${y}年${m}月${d}日<span class="dim">${items.length} 篇</span>`;
   renderDayView(items);
+
+  // 手机端选完日期自动关抽屉
+  autoCloseSidebarOnMobile();
+
+  if (skipScroll) return;  // jumpToRecent 调用时跳过自带滚动，避免和它的跳转打架
 
   // 中间主列滚动到"日期标题条"(day-topbar) 刚好贴在 sticky-area 下方
   setTimeout(() => {
@@ -955,12 +1444,15 @@ function renderReplyCard(rep) {
   const avatar   = rep.author_avatar ? `${ASSET_BASE}${rep.author_avatar.replace(/^\.\.\//, '')}` : '';
   const bodyText = esc(rep.body_text || rep.text || '').replace(/\n/g, '<br>');
 
-  // 主人自己的推文不再显示 @AnIncandescence（右侧）
-  const isOwner = (rep.author_username || '').toLowerCase() === '@anincandescence';
+  // 主人自己的推文不再显示用户名（右侧）
+  // 用 profile.json 里的 username 判断（去 @ 转小写后比较）
+  const repUname = (rep.author_username || '').replace(/^@/, '').toLowerCase();
+  const isOwner = ownerUsername && repUname === ownerUsername;
   const usernameHtml = isOwner ? '' : `<span class="reply-username">${username}</span>`;
-  // 虚拟条目标记（表示该推文不在本地）
-  const virtualBadge = rep.is_virtual
-    ? `<span class="reply-virtual-badge" title="该推文数据来自 embedded-tweet-container">引用</span>`
+  // "引用"标识：所有非主人的推文都加（无论是虚拟条目还是已有独立 HTML 的真实条目）
+  // 因为这些都是被主人引用/回复的对象
+  const virtualBadge = !isOwner
+    ? `<span class="reply-virtual-badge" title="该推文为主人引用/回复的对象">引用</span>`
     : '';
 
   // 图片：只在 media_keys 有值时显示（media_keys=[] 说明图属于被引用推文，不属于本条回复）
@@ -1061,6 +1553,12 @@ function onFrameLoad(iframe) {
   // 所有iframe都做图片精确处理（基于 wanted_images / embedded_images）
   fixImagesInFrame(iframe);
   autoHeight(iframe);  // 处理完所有DOM操作后再算高度
+  // 关键：等 100ms 让 fixImagesInFrame 内部 80ms 的 setTimeout（折叠 embedded + 重算高度）跑完
+  // 然后再标记 loaded —— jumpToRecent 依赖此标记判定 iframe 高度是否真正稳定
+  setTimeout(() => {
+    autoHeight(iframe);  // 兜底再算一次
+    iframe.dataset.loaded = '1';
+  }, 100);
 }
 
 /* iframe内嵌html的body有 min-height:100vh + padding:20px，会撑出大片空白
@@ -1087,6 +1585,80 @@ function injectFitHeight(iframe) {
         width:600px!important;
         max-width:100%!important;
         align-items:stretch!important;
+      }
+
+      /* ─── 手机端适配：缩小字号 + 紧凑间距 ─── */
+      @media (max-width: 900px) {
+        body > .tweet-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          /* 强制 border-box，让 padding 算入 width 内（防止内容溢出 iframe）*/
+          box-sizing: border-box !important;
+          /* 缩小卡片左右 padding */
+          padding: 12px !important;
+        }
+        /* 同样修 nonjsonview，避免它内部撑开 */
+        #nonjsonview {
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+        }
+        /* embedded 引用框也要修 */
+        .embedded-tweet-container {
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+        }
+        /* 推文正文：从约19px降到15px（贴近 Twitter 移动端） */
+        .tweet-content {
+          font-size: 15px !important;
+          line-height: 1.45 !important;
+        }
+        /* 推文头部：作者名/句柄 */
+        .tweet-author-name { font-size: 15px !important; }
+        .tweet-author-username, .date { font-size: 13px !important; }
+        /* embedded 引用推文 */
+        .embedded-tweet-container .tweet-author-name { font-size: 14px !important; }
+        .embedded-tweet-container .tweet-author-username,
+        .embedded-tweet-container .date { font-size: 12px !important; }
+        .embedded-tweet-container .tweet-content { font-size: 14px !important; }
+        /* 主推文头像：48×48（比回复区头像 40×40 略大，作为视觉焦点）*/
+        .tweet-author-profile-image {
+          width: 48px !important;
+          height: 48px !important;
+          min-width: 48px !important;
+          min-height: 48px !important;
+          max-width: 48px !important;
+          max-height: 48px !important;
+          flex-shrink: 0 !important;
+          flex-grow: 0 !important;
+          margin-right: 5px !important;
+        }
+        .tweet-author-profile-image img {
+          width: 48px !important;
+          height: 48px !important;
+          min-width: 48px !important;
+          min-height: 48px !important;
+          max-width: 48px !important;
+          max-height: 48px !important;
+        }
+        /* embedded 引用框头像：36×36（比主推文 48 小一档，但不会小到不合理）*/
+        .embedded-tweet-container .tweet-author-profile-image,
+        .embedded-tweet-container .tweet-author-profile-image img {
+          width: 36px !important;
+          height: 36px !important;
+          min-width: 36px !important;
+          min-height: 36px !important;
+          max-width: 36px !important;
+          max-height: 36px !important;
+        }
+        .embedded-tweet-container .tweet-author-profile-image {
+          flex-shrink: 0 !important;
+          flex-grow: 0 !important;
+        }
+        /* 图片不超出宽度 */
+        img.tweet-image, video.tweet-video {
+          max-width: 100% !important;
+          height: auto !important;
+        }
       }
     `;
   } catch(e) {}
@@ -1124,6 +1696,49 @@ function fixImagesInFrame(iframe) {
       }
     });
 
+    // 1c. 给所有保留的 tweet-image 加 onerror —— 文件实际不存在/加载失败时自动移除，
+    //     避免显示破图小图标和空白占位
+    nonjson.querySelectorAll('img.tweet-image').forEach(img => {
+      img.addEventListener('error', () => img.remove(), { once: true });
+      // 如果已经 broken（src 设置后已经触发过 error），上面监听不到，主动检查
+      if (img.complete && img.naturalWidth === 0) {
+        img.remove();
+      }
+    });
+
+    // 1b. 处理外层视频：只保留 media_key 在 wanted_videos 里的
+    const wantedVideoKeys = (item.wanted_videos || []).map(p => extractVideoKey(p));
+    const outerVideos = nonjson.querySelectorAll('.tweet-content > video');
+    outerVideos.forEach(video => {
+      if (embedded && embedded.contains(video)) return;
+      // 从 source src 提取 media_key
+      const srcEl = video.querySelector('source');
+      const vKey = srcEl ? extractVideoKey(srcEl.getAttribute('src') || '') : '';
+      if (!wantedVideoKeys.includes(vKey)) {
+        video.remove();
+      }
+    });
+
+    // 1d. 给所有保留的 video 加 error 监听 —— 视频文件实际不存在/加载失败时自动移除，
+    //     避免显示空白播放器框
+    nonjson.querySelectorAll('video').forEach(video => {
+      // video 自身的 error 事件
+      video.addEventListener('error', () => video.remove(), { once: true });
+      // <source> 子元素的 error（更可靠：每个 source 加载失败时触发）
+      video.querySelectorAll('source').forEach(s => {
+        s.addEventListener('error', () => {
+          // 该 source 失败 —— 如果所有 source 都失败，video.error 会非空
+          if (video.error || video.networkState === 3) {
+            video.remove();
+          }
+        }, { once: true });
+      });
+      // 如果已经处于 NETWORK_NO_SOURCE 状态（所有 source 加载失败），立即移除
+      if (video.networkState === 3) {
+        video.remove();
+      }
+    });
+
     // 2. 处理 embedded：插入 embedded_images 里的图（如果尚未插入）
     if (embedded && item.embedded_images && item.embedded_images.length > 0) {
       // 标记防止重复插入
@@ -1145,6 +1760,31 @@ function fixImagesInFrame(iframe) {
             embContent.appendChild(img);
           });
           embedded.dataset.imgsInjected = '1';
+        }
+      }
+    }
+
+    // 2b. 处理 embedded 视频：插入 embedded_videos（如果尚未插入）
+    if (embedded && item.embedded_videos && item.embedded_videos.length > 0) {
+      if (!embedded.dataset.videosInjected) {
+        const embContent = embedded.querySelector('.tweet-content');
+        if (embContent) {
+          const seenV = new Set();
+          item.embedded_videos.forEach(p => {
+            const vk = extractVideoKey(p);
+            if (seenV.has(vk)) return;
+            seenV.add(vk);
+            const video = doc.createElement('video');
+            video.className = 'tweet-image tweet-video';
+            video.controls = true;
+            video.preload = 'metadata';
+            const source = doc.createElement('source');
+            source.src = p;
+            source.type = 'video/mp4';
+            video.appendChild(source);
+            embContent.appendChild(video);
+          });
+          embedded.dataset.videosInjected = '1';
         }
       }
     }
@@ -1238,6 +1878,17 @@ function extractBasename(src) {
   if (m) return m[1];
   // 兜底：单扩展
   m = src.match(/_media_(.+?)\.(?:jpg|png|gif|webp|jpeg)(?:[?#]|$)/i);
+  return m ? m[1] : '';
+}
+
+/* 从视频 src 里提取 media_key 数字部分（和 build_index.py 的 build_video_index 索引一致）
+   本地文件名或 URL 格式：
+     - ..._amplify_video_2040869759278080000_..._mp4.mp4
+     - ..._ext_tw_video_1911056663718567937_...mp4
+     - ..._video_twimg_com_amplify_video_2040869759278080000_... */
+function extractVideoKey(src) {
+  if (!src) return '';
+  const m = src.match(/(?:amplify_video|ext_tw_video|tweet_video)[/_](\d+)/);
   return m ? m[1] : '';
 }
 
@@ -1598,28 +2249,93 @@ function renderRecent() {
 
 /* ── 最近收录点击：跳到该推文并对齐到搜索栏下方 ─────── */
 function jumpToRecent(dayKey, file) {
-  selectDay(dayKey);
-  setTimeout(() => {
-    const col = document.getElementById('main-col');
-    // 找到目标推文 iframe（主推文）所在的 .post-block
+  const col = document.getElementById('main-col');
+  const sameDay = (activeDay === dayKey) && !searchMode;
+
+  if (!sameDay) {
+    if (col) {
+      col.style.visibility = 'hidden';
+      // 关键：切换日期前先把 scrollTop 重置为 0
+      // 这样后续 scrollIntoView/scrollTop 都基于干净的初始状态
+      col.scrollTop = 0;
+    }
+    selectDay(dayKey, true);
+  }
+
+  // 找到目标 .post-block 并跳转
+  const doJump = () => {
     const iframes = document.querySelectorAll('.post-iframe');
+    let block = null;
     for (const f of iframes) {
       if (f.src.endsWith(file)) {
-        const block = f.closest('.post-block');
-        if (block) {
-          // 计算 sticky 吸顶区域的高度（搜索栏+tab栏）
-          const sticky = document.querySelector('.sticky-area');
-          const stickyH = sticky ? sticky.offsetHeight : 0;
-          const rect = block.getBoundingClientRect();
-          const colRect = col.getBoundingClientRect();
-          // 目标滚动位置：当前scrollTop + （block距col顶部的距离） - stickyH
-          const target = col.scrollTop + (rect.top - colRect.top) - stickyH;
-          col.scrollTo({ top: target, behavior: 'smooth' });
-        }
+        block = f.closest('.post-block');
         break;
       }
     }
-  }, 250);
+    if (!block) {
+      if (col) col.style.visibility = '';
+      return;
+    }
+    // 关键：先恢复 visibility 再算位置/跳转
+    // visibility:hidden 不阻止 layout 但可能影响某些 scroll 行为
+    if (col) col.style.visibility = '';
+    // 强制 reflow 让所有最新布局生效
+    void document.body.offsetHeight;
+    // 用 getBoundingClientRect 直接算并跳（最可控）
+    const sticky = document.querySelector('.sticky-area');
+    const stickyH = sticky ? sticky.offsetHeight : 0;
+    const blockRect = block.getBoundingClientRect();
+    const colRect = col.getBoundingClientRect();
+    const target = col.scrollTop + (blockRect.top - colRect.top) - stickyH;
+    col.scrollTop = target;
+  };
+
+  if (sameDay) {
+    requestAnimationFrame(() => requestAnimationFrame(doJump));
+    return;
+  }
+
+  // 跨日切换：等所有 iframe load 完 + 内部图片都加载完，主动重算高度，再跳转
+  // 关键：判定 iframe 真正加载了 src（不是刚创建的 about:blank "伪 ready"）
+  // —— onFrameLoad 会给真正 load 完的 iframe 设置 dataset.loaded='1'
+  const isReady = () => {
+    const iframes = Array.from(document.querySelectorAll('.post-iframe'));
+    let targetIdx = -1;
+    for (let i = 0; i < iframes.length; i++) {
+      if (iframes[i].src.endsWith(file)) { targetIdx = i; break; }
+    }
+    if (targetIdx === -1) return false;
+    // 所有 iframe 都得真正 load 完（onFrameLoad 跑完）
+    for (const f of iframes) {
+      if (f.dataset.loaded !== '1') return false;
+      try {
+        const doc = f.contentDocument;
+        if (!doc) return false;
+        // 图片必须 complete 才不会继续撑高
+        const imgs = doc.querySelectorAll('img');
+        for (const img of imgs) {
+          if (!img.complete) return false;
+        }
+      } catch(e) {}
+    }
+    return true;
+  };
+
+  const startTime = Date.now();
+  const tick = () => {
+    const elapsed = Date.now() - startTime;
+    if (isReady() || elapsed > 1500) {
+      // 主动重跑所有 iframe 的 autoHeight，确保高度反映最新（含图片）
+      document.querySelectorAll('.post-iframe').forEach(f => {
+        try { autoHeight(f); } catch(e) {}
+      });
+      // 再等一帧让 reflow 完成
+      requestAnimationFrame(() => requestAnimationFrame(doJump));
+    } else {
+      requestAnimationFrame(tick);
+    }
+  };
+  requestAnimationFrame(tick);
 }
 
 /* ── 主题切换 ─────────────────────────────────────────── */

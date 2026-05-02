@@ -19,8 +19,8 @@
     ],
     "extraResources": [
       {
-        "from": "wayback_snapshots",
-        "to": "wayback_snapshots",
+        "from": "accounts",
+        "to": "accounts",
         "filter": ["**/*"]
       }
     ],

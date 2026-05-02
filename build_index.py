@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup
 HTML_DIR   = "./wayback_snapshots/html"
 JSON_DIR   = "./wayback_snapshots/json"
 IMAGE_DIR  = "./wayback_snapshots/image"
+VIDEO_DIR  = "./wayback_snapshots/video"
 INDEX_FILE = "./wayback_snapshots/index.json"
 TEXT_MAX   = 500
 # ──────────────────────────────────────────────────────────────
@@ -36,16 +37,43 @@ def build_image_index() -> dict:
     if not os.path.isdir(IMAGE_DIR):
         return {}
     index = {}
-    for fname in os.listdir(IMAGE_DIR):
-        # 优先匹配带 _ext 的格式（双扩展），basename 用非贪婪匹配
+    # 优先索引新命名（_pbs_twimg_com_ 是 fetch_media.py 从原站直链下载的干净文件）
+    fnames = sorted(
+        os.listdir(IMAGE_DIR),
+        key=lambda f: (0 if "_pbs_twimg_com_" in f else 1, f)
+    )
+    for fname in fnames:
         m = re.search(r'_media_(.+?)_(?:jpg|png|gif|webp|jpeg)\.(?:jpg|png|gif|webp|jpeg)$', fname, re.IGNORECASE)
         if not m:
-            # 兜底：单扩展
             m = re.search(r'_media_(.+?)\.(?:jpg|png|gif|webp|jpeg)$', fname, re.IGNORECASE)
         if m:
             basename = m.group(1)
             if basename not in index:
                 index[basename] = f"../image/{fname}"
+    return index
+
+
+def build_video_index() -> dict:
+    """
+    扫描 video/ 目录，建立 media_key(数字部分) → 相对路径的映射。
+    本地文件名形如：
+      - {timestamp}_..._amplify_video_2040869759278080000_..._mp4.mp4
+      - {timestamp}_..._ext_tw_video_1911056663718567937_..._mp4.mp4
+    返回 {media_key_number: "../video/完整文件名.mp4", ...}
+    """
+    if not os.path.isdir(VIDEO_DIR):
+        return {}
+    index = {}
+    fnames = sorted(
+        os.listdir(VIDEO_DIR),
+        key=lambda f: (0 if "_video_twimg_com_" in f else 1, f)
+    )
+    for fname in fnames:
+        m = re.search(r'(?:amplify_video|ext_tw_video|tweet_video)[/_](\d+)', fname)
+        if m:
+            key = m.group(1)
+            if key not in index:
+                index[key] = f"../video/{fname}"
     return index
 
 
@@ -250,21 +278,137 @@ def fname_to_iso(fname: str) -> str:
     return "1970-01-01T00:00:00.000Z"
 
 
-def extract_from_json(json_data: dict) -> dict:
+def build_tweet_id_index() -> dict:
+    """
+    扫描 json/ 目录，建立 tweet_id → json 文件路径 的映射。
+    用于沿 referenced_tweets 链向上追溯祖先推文（找祖先的媒体）。
+
+    一条推文的 tweet_id = json 文件里 data.id。
+    通常 tweet_id 也在文件名末尾（如 ..._status_2030324107624272034.json），
+    但用 data.id 作权威来源更稳。
+    """
+    if not os.path.isdir(JSON_DIR):
+        return {}
+    index = {}
+    for fname in os.listdir(JSON_DIR):
+        if not fname.endswith(".json"):
+            continue
+        fpath = os.path.join(JSON_DIR, fname)
+        try:
+            with open(fpath, encoding="utf-8") as f:
+                data = json.load(f)
+            tid = str(data.get("data", {}).get("id", ""))
+            if tid and tid not in index:
+                index[tid] = fpath
+        except Exception:
+            continue
+    return index
+
+
+def _media_lookup_for_json(json_data: dict):
+    """
+    从一份 json 提取 media_key → image_basename / video_key 映射。
+    返回 (mk_to_image_basename, mk_to_video_key)。
+    供祖先链遍历时复用。
+    """
+    mk_to_image_basename = {}
+    mk_to_video_key      = {}
+    includes = json_data.get("includes", {}) or {}
+    for media in includes.get("media", []) or []:
+        mkey  = media.get("media_key", "")
+        mtype = media.get("type", "")
+        if mtype == "photo":
+            url = media.get("url", "") or media.get("preview_image_url", "")
+            if url:
+                m = re.search(r'/media/([^/?#]+?)\.(?:jpg|png|gif|webp|jpeg)(?:[?#]|$)', url, re.IGNORECASE)
+                if m:
+                    mk_to_image_basename[mkey] = m.group(1)
+        elif mtype in ("video", "animated_gif"):
+            key = None
+            for v in media.get("variants", []) or []:
+                if v.get("content_type") == "video/mp4":
+                    url = v.get("url", "")
+                    m = re.search(r'(?:amplify_video|ext_tw_video|tweet_video)[/_](\d+)', url)
+                    if m:
+                        key = m.group(1)
+                        break
+            if not key:
+                m = re.search(r'(\d+)$', mkey)
+                if m:
+                    key = m.group(1)
+            if key:
+                mk_to_video_key[mkey] = key
+    return mk_to_image_basename, mk_to_video_key
+
+
+def collect_ancestor_media(start_tweet_id: str,
+                           tweet_id_index: dict,
+                           max_depth: int = 50) -> tuple:
+    """
+    从 start_tweet_id 出发，沿 referenced_tweets 链向上追溯，
+    收集所有祖先推文的图/视频。
+
+    断链停止：某层祖先没有对应本地 json 时，整条链向上的追溯就停止。
+
+    返回 (image_basenames, video_keys)，按"从直接被引用 → 越远祖先"的顺序。
+    用 visited 防环（虽然推文链不应有环，保险起见）。
+    """
+    image_basenames = []
+    video_keys      = []
+    visited = set()
+    current_id = start_tweet_id
+    depth = 0
+
+    while current_id and current_id not in visited and depth < max_depth:
+        visited.add(current_id)
+        depth += 1
+        json_path = tweet_id_index.get(current_id)
+        if not json_path:
+            break  # 断链，停止
+        try:
+            with open(json_path, encoding="utf-8") as f:
+                ancestor_data = json.load(f)
+        except Exception:
+            break
+
+        # 提取该祖先的 media
+        mk_img, mk_vid = _media_lookup_for_json(ancestor_data)
+        anc_main = ancestor_data.get("data", {}) or {}
+        anc_mk = (anc_main.get("attachments", {}) or {}).get("media_keys", []) or []
+        for k in anc_mk:
+            if k in mk_img:
+                image_basenames.append(mk_img[k])
+            if k in mk_vid:
+                video_keys.append(mk_vid[k])
+
+        # 向上一层：找它的 referenced_tweets 里的 replied_to 或 quoted
+        next_id = None
+        for ref in (anc_main.get("referenced_tweets") or []):
+            if ref.get("type") in ("replied_to", "quoted"):
+                next_id = str(ref.get("id", ""))
+                break
+        current_id = next_id
+
+    return image_basenames, video_keys
+
+
+def extract_from_json(json_data: dict, tweet_id_index: dict = None) -> dict:
     result = {
-        "tweet_id":            "",
-        "conversation_id":     "",
-        "is_reply":            False,
-        "reply_to_id":         "",
-        "reply_type":          "",
-        "has_quoted":          False,
-        "quoted_id":           "",
-        "has_media":           False,
-        "media_keys":          [],
-        "wanted_basenames":    [],   # 主推文应显示的图 basename 列表
-        "embedded_basenames":  [],   # embedded 应显示的图 basename 列表
-        "remove_urls":         [],   # 主推文文字里要删除的 t.co 短链（图片/引用占位）
-        "embedded_remove_urls":[],   # embedded 文字里要删除的 t.co 短链
+        "tweet_id":                "",
+        "conversation_id":         "",
+        "is_reply":                False,
+        "reply_to_id":             "",
+        "reply_type":              "",
+        "has_quoted":              False,
+        "quoted_id":               "",
+        "has_media":               False,
+        "media_keys":              [],
+        "wanted_basenames":        [],   # 主推文应显示的图 basename 列表
+        "embedded_basenames":      [],   # embedded 应显示的图 basename 列表
+        "wanted_video_keys":       [],   # 主推文应显示的视频 key 列表（数字 media_key）
+        "embedded_video_keys":     [],   # embedded 应显示的视频 key 列表
+        "remove_urls":             [],   # 主推文文字里要删除的 t.co 短链（图片/引用占位）
+        "embedded_remove_urls":    [],   # embedded 文字里要删除的 t.co 短链
     }
     data     = json_data.get("data", {})
     includes = json_data.get("includes", {})
@@ -285,29 +429,97 @@ def extract_from_json(json_data: dict) -> dict:
     result["media_keys"] = mk
     result["has_media"]  = len(mk) > 0 or bool(includes.get("media"))
 
-    # 建立 media_key → URL basename 的映射
-    # URL 形如 https://pbs.twimg.com/media/G7F7hTpaIAEw53d.jpg → basename = G7F7hTpaIAEw53d
-    # 注意：basename 可能包含下划线（Twitter 媒体ID会用下划线作填充，如 HFJ8JQ5aAAAXUq_）
-    mk_to_basename = {}
+    # 建立 media_key → 图 basename / 视频 key 的映射
+    # 图 URL 形如 https://pbs.twimg.com/media/G7F7hTpaIAEw53d.jpg → basename = G7F7hTpaIAEw53d
+    # 视频 URL 形如 https://video.twimg.com/amplify_video/2040869759278080000/vid/avc1/...mp4 → key = 2040869759278080000
+    mk_to_image_basename = {}  # media_key → 图的 basename
+    mk_to_video_key      = {}  # media_key → 视频 key（数字）
     for media in includes.get("media", []):
-        url = media.get("url", "") or media.get("preview_image_url", "")
-        if not url:
-            continue
-        m = re.search(r'/media/([^/?#]+?)\.(?:jpg|png|gif|webp|jpeg)(?:[?#]|$)', url, re.IGNORECASE)
-        if m:
-            mk_to_basename[media["media_key"]] = m.group(1)
+        mkey  = media.get("media_key", "")
+        mtype = media.get("type", "")
+        if mtype == "photo":
+            url = media.get("url", "") or media.get("preview_image_url", "")
+            if url:
+                m = re.search(r'/media/([^/?#]+?)\.(?:jpg|png|gif|webp|jpeg)(?:[?#]|$)', url, re.IGNORECASE)
+                if m:
+                    mk_to_image_basename[mkey] = m.group(1)
+        elif mtype in ("video", "animated_gif"):
+            # 视频 key 从 variants 的 URL 提取，兜底用 media_key 里的数字部分
+            key = None
+            for v in media.get("variants", []) or []:
+                if v.get("content_type") == "video/mp4":
+                    url = v.get("url", "")
+                    m = re.search(r'(?:amplify_video|ext_tw_video|tweet_video)[/_](\d+)', url)
+                    if m:
+                        key = m.group(1)
+                        break
+            if not key:
+                m = re.search(r'(\d+)$', mkey)
+                if m:
+                    key = m.group(1)
+            if key:
+                mk_to_video_key[mkey] = key
 
-    # 主推文应显示的图：data.attachments.media_keys 对应的 basename
-    result["wanted_basenames"] = [mk_to_basename[k] for k in mk if k in mk_to_basename]
+    # 主推文应显示的图/视频
+    result["wanted_basenames"]  = [mk_to_image_basename[k] for k in mk if k in mk_to_image_basename]
+    result["wanted_video_keys"] = [mk_to_video_key[k]      for k in mk if k in mk_to_video_key]
 
-    # embedded 应显示的图：referenced_tweets 对应推文的 media_keys 对应的 basename
+    # embedded 应显示的图/视频：referenced_tweets 对应推文的 media_keys
     ref_ids = [str(r.get("id", "")) for r in data.get("referenced_tweets", [])]
     for t in includes.get("tweets", []):
         if str(t.get("id", "")) in ref_ids:
             t_mk = t.get("attachments", {}).get("media_keys", [])
             for k in t_mk:
-                if k in mk_to_basename:
-                    result["embedded_basenames"].append(mk_to_basename[k])
+                if k in mk_to_image_basename:
+                    result["embedded_basenames"].append(mk_to_image_basename[k])
+                if k in mk_to_video_key:
+                    result["embedded_video_keys"].append(mk_to_video_key[k])
+
+    # 祖先链：沿 referenced_tweets 向上递归追溯所有祖先推文的图/视频
+    # 例：A reply→B reply→C，C 的 embedded 应显示 B 的图（直接被引用），
+    # 但如果 B 没图、B 又 reply 了 A，那 A 的图也要纳入。
+    # 数据源是本地 json/，断链停止。
+    #
+    # 第一层祖先（直接被引用）的图已经在上面 includes.tweets 处理过了，
+    # 这里要追溯第2层及以上。优先从 includes.tweets 里拿第1层祖先的 referenced_tweets
+    # 信息（这样即使第1层祖先没有独立 json 也能拿到祖父ID），然后用 tweet_id_index 追溯。
+    if tweet_id_index:
+        seen_imgs = set(result["embedded_basenames"])
+        seen_vids = set(result["embedded_video_keys"])
+        # 用 includes.tweets 索引快速找到任意 ref_id 对应的推文数据（含 referenced_tweets）
+        included_by_id = {str(t.get("id", "")): t for t in includes.get("tweets", [])}
+        for first_ancestor_id in ref_ids:
+            # 取第1层祖先的 referenced_tweets（祖父）
+            grand_ids = []
+            anc_in_includes = included_by_id.get(first_ancestor_id)
+            if anc_in_includes:
+                # 优先从 includes.tweets 拿（不依赖独立 json 文件）
+                for ref in (anc_in_includes.get("referenced_tweets") or []):
+                    if ref.get("type") in ("replied_to", "quoted"):
+                        grand_ids.append(str(ref.get("id", "")))
+            else:
+                # includes.tweets 没收录这条祖先 → 尝试从本地独立 json 拿
+                anc_path = tweet_id_index.get(first_ancestor_id)
+                if anc_path:
+                    try:
+                        with open(anc_path, encoding="utf-8") as f:
+                            anc_data = json.load(f)
+                        for ref in (anc_data.get("data", {}).get("referenced_tweets") or []):
+                            if ref.get("type") in ("replied_to", "quoted"):
+                                grand_ids.append(str(ref.get("id", "")))
+                    except Exception:
+                        pass
+            # 从每个祖父开始追溯（递归，沿祖先链向上）
+            for grand_id in grand_ids:
+                a_imgs, a_vids = collect_ancestor_media(grand_id, tweet_id_index)
+                for b in a_imgs:
+                    if b not in seen_imgs:
+                        seen_imgs.add(b)
+                        result["embedded_basenames"].append(b)
+                for v in a_vids:
+                    if v not in seen_vids:
+                        seen_vids.add(v)
+                        result["embedded_video_keys"].append(v)
 
     # 主推文的冗余短链（要从文字里删除）：
     #   - media_key 非空：图片/视频短链（图已直接显示，短链多余）
@@ -344,18 +556,20 @@ def extract_from_json(json_data: dict) -> dict:
 
 def extract_from_html_fallback(html_text: str, fname: str) -> dict:
     result = {
-        "tweet_id":            extract_tweet_id_from_filename(fname),
-        "conversation_id":     "",
-        "is_reply":            False,
-        "reply_to_id":         "",
-        "reply_type":          "",
-        "has_quoted":          False,
-        "quoted_id":           "",
-        "has_media":           False,
-        "media_keys":          [],
-        "wanted_basenames":    [],
-        "embedded_basenames":  [],
-        "remove_urls":         [],
+        "tweet_id":                extract_tweet_id_from_filename(fname),
+        "conversation_id":         "",
+        "is_reply":                False,
+        "reply_to_id":             "",
+        "reply_type":              "",
+        "has_quoted":              False,
+        "quoted_id":               "",
+        "has_media":               False,
+        "media_keys":              [],
+        "wanted_basenames":        [],
+        "embedded_basenames":      [],
+        "wanted_video_keys":       [],
+        "embedded_video_keys":     [],
+        "remove_urls":             [],
         "embedded_remove_urls":[],
     }
     soup = BeautifulSoup(html_text, "html.parser")
@@ -404,7 +618,12 @@ def main():
 
     # 建立本地图片索引：basename → 相对路径
     image_index = build_image_index()
-    print(f"本地图片索引：{len(image_index)} 张图片（按 basename 索引）\n")
+    video_index = build_video_index()
+    print(f"本地图片索引：{len(image_index)} 张图片（按 basename 索引）")
+    print(f"本地视频索引：{len(video_index)} 个视频（按 media_key 索引）")
+    # 建立 tweet_id → json 文件路径 映射，用于祖先链追溯
+    tweet_id_index = build_tweet_id_index()
+    print(f"本地推文索引：{len(tweet_id_index)} 条 tweet_id（用于祖先链追溯）\n")
 
     index_data = []
     no_date    = []
@@ -430,14 +649,16 @@ def main():
         if os.path.exists(json_path):
             with open(json_path, encoding="utf-8") as jf:
                 json_data = json.load(jf)
-            meta = extract_from_json(json_data)
+            meta = extract_from_json(json_data, tweet_id_index)
         else:
             no_json.append(fname)
             meta = extract_from_html_fallback(html_text, fname)
 
-        # 把 basename 转换成实际本地图片路径
-        wanted_images = [image_index[b] for b in meta.get("wanted_basenames", []) if b in image_index]
-        embedded_images = [image_index[b] for b in meta.get("embedded_basenames", []) if b in image_index]
+        # 把 basename / media_key 转换成实际本地相对路径
+        wanted_images    = [image_index[b] for b in meta.get("wanted_basenames",    []) if b in image_index]
+        embedded_images  = [image_index[b] for b in meta.get("embedded_basenames",  []) if b in image_index]
+        wanted_videos    = [video_index[k] for k in meta.get("wanted_video_keys",   []) if k in video_index]
+        embedded_videos  = [video_index[k] for k in meta.get("embedded_video_keys", []) if k in video_index]
 
         # 清理 body_text 和 text 里的冗余短链（用于回复卡片直接展示）
         # 用 meta["remove_urls"] 删除冗余短链，整理空格
@@ -478,11 +699,13 @@ def main():
             "body_text":       clean_body,
             # images：本推文（卡片渲染用，回复tab的展开卡片）的图列表
             "images":          render_data["images"] if meta.get("media_keys") else [],
-            # 新增字段：wanted_images / embedded_images（Reader.html 注入到 iframe）
-            #   - wanted_images：本推文外层应该显示的图（其他要隐藏，避免被引用推文的图错位显示）
-            #   - embedded_images：embedded 里应该插入的图（解决 embedded 只有短链没图的问题）
+            # Reader.html 注入到 iframe 用：
+            #   - wanted_*：本推文外层应该显示的媒体（其他要隐藏，避免被引用推文的媒体错位显示）
+            #   - embedded_*：embedded 里应该插入的媒体（解决 embedded 只有短链没图/视频的问题）
             "wanted_images":     wanted_images,
             "embedded_images":   embedded_images,
+            "wanted_videos":     wanted_videos,
+            "embedded_videos":   embedded_videos,
             # 冗余短链：本推文/embedded 文字里要删除的 t.co 短链（图片占位+引用占位，不删普通分享链接）
             # Reader.html 用于清理 iframe 内的文字（卡片渲染用的 body_text 已在上面清理过）
             "remove_urls":         meta.get("remove_urls", []),
