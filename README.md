@@ -1,4 +1,4 @@
-# 白炽阅读器 · IncandescenceReader
+## 白炽阅读器 · IncandescenceReader
 
 一个将本地 Twitter/X 存档打包成单文件便携桌面应用的离线阅读器，支持多账号。
 
@@ -11,7 +11,7 @@
 ---
 
 ### 成品展示：
-<img src="https://free.picui.cn/free/2026/05/02/69f5f0e0474e9.png" width="100%" style="max-width: 1100px; border-radius: 8px;" />
+<img src="https://free.picui.cn/free/2026/05/02/69f5f0e0474e9.png" width="100%" style="max-width: 1100px; border-radius: 8px;"  alt=""/>
 
 **友链：**
 **sjshb57.github.io/AnIncanescence**
