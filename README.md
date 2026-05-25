@@ -17,6 +17,7 @@
 **sjshb57.github.io/AnIncanescence**
 
 ---
+
 ## 目录结构
 
 ```
@@ -29,13 +30,14 @@ IncandescenceReader/
     AnIncandescence/
       cdx_data.json     ← wayback 流程需要（私密账号 dump 流程不需要）
       wayback_snapshots/
-        index.json      ← build_index.py 生成
+        index.json      ← archive.py build-index 生成
         profile.json
         html/
+        json/
         avatar/
         image/
         video/
-        json/
+        _log/           ← 下载状态目录（自动生成）
     TauCeti_10700/      ← 多账号支持，可放任意数量
       wayback_snapshots/
         ...
@@ -49,38 +51,38 @@ IncandescenceReader/
 
 ### 第一步：准备数据
 
-数据有两种来源：
+数据通过配套的存档脚本 [archive.py](https://github.com/sjshb57/IncandescenceArchiver) 抓取，有两种来源：
 
 **A. Wayback Machine 流程（公开账号）**
 
-依次跑 4 个脚本（在对应账号目录下，cd 进去）：
+在对应账号目录下依次执行：
 
-```
+```bash
 cd accounts/AnIncandescence
-python ../../fetch_json.py     # 1. 抓 X API JSON（基于 cdx_data.json）
-python ../../fetch_media.py    # 2. 基于 JSON 下载图片/视频/头像
-python ../../0037.py           # 3. 下载 HTML 并改写 src 为本地路径
-python ../../build_index.py    # 4. 生成 index.json 索引
-```
 
-`cdx_data.json` 需要先从 Wayback CDX API 手动下载放进去：
-```
-http://web.archive.org/cdx/search/cdx?url=twitter.com/{USERNAME}/status/*&output=json
+python ../../archive.py fetch-cdx AnIncandescence  # 1. 抓取 Wayback 快照清单
+python ../../archive.py fetch-html                 # 2. 下载 HTML 快照
+python ../../archive.py fetch-media                # 3. 下载图片/视频/头像
+python ../../archive.py build-index                # 4. 生成 index.json 索引
 ```
 
 **B. X API Dump 流程（私密账号，从导出文件转换）**
 
-```
+```bash
 cd accounts/TauCeti_10700
-python ../../convert_006_to_ours.py     # 1. 把 dump 转成项目格式 JSON
-python ../../fetch_avatars_from_json.py # 2. 下载头像
-python ../../render_html_from_json.py   # 3. 从 JSON 生成 HTML（模仿 wayback 结构）
-python ../../build_index.py             # 4. 生成 index.json 索引
+
+python ../../archive.py convert /path/to/twitter-export/  # 1. 转换导出包
+python ../../archive.py fetch-media                       # 2. 下载图片/视频/头像
+python ../../archive.py build-index                       # 3. 生成 index.json 索引
 ```
+
+**增量更新**：再次执行同样的命令即可，脚本自动跳过已完成的内容，只处理新增和失败的部分。
+
+---
 
 ### 第二步：安装依赖（只需一次）
 
-```
+```bash
 cd IncandescenceReader
 npm install
 ```
@@ -89,7 +91,7 @@ npm install
 
 ### 第三步：开发预览（可选）
 
-```
+```bash
 npm start
 ```
 
@@ -97,7 +99,7 @@ npm start
 
 ### 第四步：打包
 
-```
+```bash
 npm run dist
 ```
 
@@ -120,11 +122,7 @@ dist/
 - `win-unpacked/` 整个文件夹就是程序本体，移动时需要整个文件夹一起移动，不能单独拷走里面的 exe
 - 文件夹大小取决于存档数据量（Electron 内置 Chromium 约 150MB + 数据）
 - 如果没有 `icon.ico`，打包时会用默认图标，不影响功能（可以忽略警告）
-- **更新存档后不需要重新打包**，直接操作 `win-unpacked/resources/accounts/{USERNAME}/wayback_snapshots/`：
-    1. 把新的 HTML 文件复制到 `.../wayback_snapshots/html/`（或重新跑 render 脚本）
-    2. 重新跑 `build_index.py` 生成新的 `index.json`
-    3. 把新的 `index.json` 替换到 `.../wayback_snapshots/`
-    4. 下次启动自动生效
+- **更新存档后不需要重新打包**，直接在账号目录下重新跑 archive.py，再把新的 `index.json` 替换到 `win-unpacked/resources/accounts/{USERNAME}/wayback_snapshots/`，下次启动自动生效
 - 添加新账号也无需重新打包：在 `resources/accounts/` 下新建账号目录放好数据即可，下次启动自动出现在切换菜单里
 - 只有修改了 `Reader.html` 或 `main.js` 代码本身时，才需要重新 `npm run dist`
 
@@ -132,12 +130,15 @@ dist/
 
 ## 技术实现
 
-### build_index.py — 索引构建
+### archive.py — 存档与索引构建
+
+配套存档脚本，负责从 Wayback Machine 抓取数据并生成索引。详见 [archive.py 项目文档](https://github.com/sjshb57/Test)。
 
 扫描账号目录下 `wayback_snapshots/html/` 与 `wayback_snapshots/json/`，对每条推文从两边综合提取数据：
 
 - **JSON 优先**：从 X API JSON 直接读取作者、时间、文本、媒体 key、引用关系等结构化字段
 - **HTML 兜底**：JSON 缺失时从 HTML 解析（DateString、`#nonjsonview` 内的 `.tweet-content`）
+- **本地媒体索引**：扫描 `image/`、`video/`、`avatar/` 目录，直接生成本地路径，不依赖预处理
 
 输出 `wayback_snapshots/index.json`，每条记录包含完整字段：
 
@@ -156,14 +157,15 @@ dist/
   "is_reply": false,
   "is_virtual": false,
   "reply_to_id": "...",
-  "wanted_images": [...],
+  "wanted_images": ["../image/xxx.jpg"],
+  "wanted_videos": ["../video/xxx.mp4"],
+  "wanted_avatars": ["../avatar/avatar_xxx.jpg"],
   "embedded_images": [...],
-  "wanted_videos": [...],
   "embedded_videos": [...]
 }
 ```
 
-被引用但本地无独立 HTML 的外人推文以"虚拟条目"形式加入索引（`is_virtual: true`），从 `<embedded-tweet-container>` 提取。脚本同时构建 `tweet_id_index` 来追溯祖先推文上的媒体（多层引用嵌套时正确归属图片）。
+被引用但本地无独立 HTML 的外人推文以"虚拟条目"形式加入索引（`is_virtual: true`），从 `<embedded-tweet-container>` 提取。
 
 ### main.js — Electron 主进程
 
@@ -184,7 +186,14 @@ dist/
 
 **多账号切换**：启动时 fetch `incr://local/_accounts` 拿到账号清单，右上角显示切换按钮，点击弹层选账号，localStorage 记忆当前选择。切换时重设路径常量并重新加载 profile.json + index.json。
 
-**iframe 渲染**：每条推文用独立 iframe 加载原始 HTML 存档。`onload` 时通过 `contentDocument` 直接操作 DOM 注入主题样式（明/暗两套配色）、根据 `wanted_images` / `embedded_images` 字段精准过滤媒体（避免显示破图）、折叠 embedded 引用框，最后用 `scrollHeight` 自动撑开 iframe 高度避免内部滚动条。所有这些操作完成后才标记 `dataset.loaded='1'`，作为"高度真正稳定"的信号。
+**iframe 渲染**：每条推文用独立 iframe 加载原始 HTML 存档。`onload` 时通过 `contentDocument` 直接操作 DOM：
+- 注入明/暗两套主题样式
+- 删除 Wayback Machine 工具栏和 JSON 展示元素
+- 根据 `wanted_images` / `wanted_videos` / `wanted_avatars` 字段将媒体 src 替换为本地路径
+- 本地文件不存在时通过 `onerror` / `error` 事件自动移除对应元素，不显示破图或空白播放器
+- 折叠 embedded 引用框，用 `scrollHeight` 自动撑开 iframe 高度
+
+所有这些操作完成后才标记 `dataset.loaded='1'`，作为"高度真正稳定"的信号。
 
 **最近收录跳转**：右栏点击会切换日期 + 跳到目标推文。跳转前先 `visibility:hidden` 主列，再轮询等待目标 iframe 及其之前的 iframe 全部 `dataset.loaded='1'`（同时检查内部 `<img>` 是否 complete），主动重跑 `autoHeight` 同步高度，最后用 `getBoundingClientRect` 算位置 + `scrollTop` 直接跳转，不留滚动动画。
 
@@ -205,4 +214,4 @@ https://github.com/CheeseGhostfox/IncandescenceReader
 
 Copyright © 2026 sjshb57
 
-本项目基于 [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html) 开源。你可以自由使用、修改和分发本项目，但衍生作品必须同样以 GPL-3.0 协议开源。
+本项目基于 [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html) 开源。你可以自由使用、修改和分发本项目，但衍生作品必须同样以 AGPL-3.0 协议开源。
