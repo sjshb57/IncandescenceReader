@@ -1679,6 +1679,9 @@ function fixImagesInFrame(iframe) {
     if (!item) return;
 
     const nonjson = doc.getElementById('nonjsonview');
+    // 删除 wayback 工具元素（clean-html 已处理，前端再删一次作为双保险）
+    doc.getElementById('jsonview')?.remove();
+    doc.querySelectorAll('div.notice, #wm-ipp, #wm-ipp-base').forEach(el => el.remove());
     if (!nonjson) return;
     const embedded = nonjson.querySelector('.embedded-tweet-container');
 
@@ -1963,6 +1966,9 @@ function autoHeight(iframe) {
   try {
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
     if (!doc) return;
+    // 保存主列滚动位置，防止先设 height:0 时触发 scrollTop 重置
+    const col = document.getElementById('main-col');
+    const savedTop = col ? col.scrollTop : 0;
     // 先把 iframe 高度设为 0，强制 body 重新计算内容高度
     // 否则当 embedded 展开又收回时，scrollHeight 会保留之前展开时的较大值
     iframe.style.height = '0px';
@@ -1970,6 +1976,8 @@ function autoHeight(iframe) {
     void doc.documentElement.offsetHeight;
     const h = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
     iframe.style.height = (h + 4) + 'px';
+    // 恢复滚动位置
+    if (col) col.scrollTop = savedTop;
   } catch(e) { iframe.style.height = '400px'; }
 }
 
