@@ -1679,6 +1679,9 @@ function fixImagesInFrame(iframe) {
     if (!item) return;
 
     const nonjson = doc.getElementById('nonjsonview');
+    // 删除 wayback 工具元素（banner / 原始 JSON 展示），clean-html 不再需要处理这些
+    doc.getElementById('jsonview')?.remove();
+    doc.querySelectorAll('div.notice, #wm-ipp, #wm-ipp-base').forEach(el => el.remove());
     if (!nonjson) return;
     const embedded = nonjson.querySelector('.embedded-tweet-container');
 
@@ -1698,6 +1701,14 @@ function fixImagesInFrame(iframe) {
 
     // 1c. 给所有保留的 tweet-image 加 onerror —— 文件实际不存在/加载失败时自动移除，
     //     避免显示破图小图标和空白占位
+    // 同时把 src 替换成本地路径（优先本地文件，不依赖 wayback 远程）
+    const bnToPath = {};
+    (item.wanted_images || []).forEach(p => { bnToPath[extractBasename(p)] = p; });
+    nonjson.querySelectorAll('img.tweet-image').forEach(img => {
+      if (embedded && embedded.contains(img)) return;
+      const bn = extractBasename(img.getAttribute('src') || '');
+      if (bnToPath[bn]) img.src = bnToPath[bn];
+    });
     nonjson.querySelectorAll('img.tweet-image').forEach(img => {
       img.addEventListener('error', () => img.remove(), { once: true });
       // 如果已经 broken（src 设置后已经触发过 error），上面监听不到，主动检查
@@ -1711,12 +1722,22 @@ function fixImagesInFrame(iframe) {
     const outerVideos = nonjson.querySelectorAll('.tweet-content > video');
     outerVideos.forEach(video => {
       if (embedded && embedded.contains(video)) return;
-      // 从 source src 提取 media_key
       const srcEl = video.querySelector('source');
       const vKey = srcEl ? extractVideoKey(srcEl.getAttribute('src') || '') : '';
       if (!wantedVideoKeys.includes(vKey)) {
         video.remove();
       }
+    });
+
+    // 把保留视频的 source src 替换成本地路径（优先本地，不依赖 wayback 远程）
+    const vkToPath = {};
+    (item.wanted_videos || []).forEach(p => { vkToPath[extractVideoKey(p)] = p; });
+    nonjson.querySelectorAll('video').forEach(video => {
+      if (embedded && embedded.contains(video)) return;
+      const srcEl = video.querySelector('source');
+      if (!srcEl) return;
+      const vk = extractVideoKey(srcEl.getAttribute('src') || '');
+      if (vkToPath[vk]) srcEl.src = vkToPath[vk];
     });
 
     // 1d. 给所有保留的 video 加 error 监听 —— 视频文件实际不存在/加载失败时自动移除，
@@ -1788,6 +1809,27 @@ function fixImagesInFrame(iframe) {
         }
       }
     }
+
+    // 2c. 替换头像 src 为本地路径（从 wanted_avatars 读，含正确 ext，不再猜）
+    const pidToAvatar = {};
+    (item.wanted_avatars || []).forEach(p => {
+      const m = p.match(/avatar_(\d+)/);
+      if (m) pidToAvatar[m[1]] = p;
+    });
+    nonjson.querySelectorAll('img:not(.tweet-image)').forEach(img => {
+      const s = img.getAttribute('src') || '';
+      if (!s.includes('profile_images')) return;
+      const m = s.match(/profile_images\/(\d+)\//);
+      if (!m) return;
+      const pid = m[1];
+      if (pidToAvatar[pid]) {
+        img.src = pidToAvatar[pid];
+      } else {
+        img.remove();  // 本地没有这个头像
+      }
+      img.addEventListener('error', () => img.remove(), { once: true });
+      if (img.complete && img.naturalWidth === 0) img.remove();
+    });
 
     // 3. 清理冗余短链（图片占位+引用占位的 t.co 链接，普通分享链接保留）
     removeShortlinksInFrame(nonjson, embedded, item);
