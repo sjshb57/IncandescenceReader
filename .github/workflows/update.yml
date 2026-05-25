@@ -1,0 +1,134 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# update.yml — 每 7 天自动增量更新
+#
+# 仓库名即 Twitter 用户名，无需任何配置。
+# 已下载的内容自动跳过，真正的增量更新。
+# 每次更新同时重试上次失败的媒体文件。
+# 每周日 UTC 02:00（北京时间 10:00）自动触发。
+# 也可手动触发：Actions → 增量更新 → Run workflow
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: 增量更新
+
+on:
+  schedule:
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 读取用户名
+        id: info
+        run: |
+          U="${{ github.event.repository.name }}"
+          echo "username=$U" >> $GITHUB_OUTPUT
+          echo "📋 目标账号: $U"
+
+      - name: 安装依赖
+        run: pip install requests beautifulsoup4 --quiet
+
+      # ⚠️  archive.py 直链硬编码在这里，仓库名变更时修改此处 URL
+      - name: 拉取最新 archive.py
+        run: |
+          curl -fsSL \
+            "https://raw.githubusercontent.com/sjshb57/Test/main/archive.py" \
+            -o archive.py
+          echo "✅ archive.py ($(wc -l < archive.py) 行)"
+
+      - name: 同步最新 index.html
+        run: |
+          U="${{ steps.info.outputs.username }}"
+          curl -fsSL \
+            "https://raw.githubusercontent.com/sjshb57/AnIncanescence/main/index.html" \
+            -o index.html
+          sed -i "s/const ACCOUNTS_HARDCODED = \['AnIncandescence', 'TauCeti_10700'\]/const ACCOUNTS_HARDCODED = ['$U']/" index.html
+          echo "✅ index.html 已同步（已替换用户名）"
+
+      - name: 检查存档目录
+        id: check
+        run: |
+          U="${{ steps.info.outputs.username }}"
+          if [ ! -d "accounts/$U" ]; then
+            echo "⚠️  accounts/$U 不存在，请先运行「第一阶段：首次建档 HTML」"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: fetch-cdx（增量）
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          U="${{ steps.info.outputs.username }}"
+          cd accounts/$U
+          python3 ../../archive.py fetch-cdx "$U"
+
+      - name: fetch-html（增量）
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          cd accounts/${{ steps.info.outputs.username }}
+          python3 ../../archive.py fetch-html || true
+
+      - name: fetch-media（增量）
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          cd accounts/${{ steps.info.outputs.username }}
+          python3 ../../archive.py fetch-media || true
+
+      # 每次增量更新时顺带重试上次失败的媒体文件
+      - name: retry --image-failed
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          cd accounts/${{ steps.info.outputs.username }}
+          python3 ../../archive.py retry --image-failed || true
+
+      - name: retry --video-failed
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          cd accounts/${{ steps.info.outputs.username }}
+          python3 ../../archive.py retry --video-failed || true
+
+      - name: retry --avatar-failed
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          cd accounts/${{ steps.info.outputs.username }}
+          python3 ../../archive.py retry --avatar-failed || true
+
+      - name: clean-html（增量）
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          cd accounts/${{ steps.info.outputs.username }}
+          python3 ../../archive.py clean-html
+
+      - name: build-index
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          cd accounts/${{ steps.info.outputs.username }}
+          python3 ../../archive.py build-index
+
+      - name: 推送增量内容
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "✅ 本周无新内容"
+            exit 0
+          fi
+          COUNT=$(git diff --cached --numstat | wc -l)
+          DATE=$(date -u +"%Y-%m-%d")
+          git commit -m "🔄 增量更新: ${{ steps.info.outputs.username }} (+${COUNT} 文件) ${DATE} [skip ci]"
+          git push
+          echo "✅ 增量推送完成，新增 ${COUNT} 个文件"
