@@ -622,6 +622,10 @@ body.light .post-iframe-wrap { background: #ffffff; }
 .stat-val   { color: var(--text); font-weight: 600; }
 
 .recent-item { padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: opacity .15s; }
+.recent-pinned { border-left: 3px solid var(--accent,#1d9bf0); padding-left: 8px; }
+.pinned-block { margin-bottom: 16px; }
+.pinned-block-label { font-size: 14px; color: var(--accent,#1d9bf0); font-weight: 700; padding: 6px 0 4px; display: flex; align-items: center; gap: 4px; }
+.pinned-label { font-size: 11px; color: var(--accent,#1d9bf0); margin-bottom: 2px; font-weight: 600; }
 .recent-item:last-child { border-bottom: none; }
 .recent-item:hover { opacity: .7; }
 .recent-date { font-size: 13px; color: var(--accent); font-weight: 600; margin-bottom: 2px; }
@@ -1145,15 +1149,19 @@ async function loadProfile() {
     const c = await r.json();
     document.getElementById('p-name').textContent     = c.name     || '';
     document.getElementById('p-username').textContent = c.username || '';
-    document.getElementById('p-bio').textContent      = c.bio      || '';
+    document.getElementById('p-bio').innerHTML      = renderBioWithEntities(c.bio || '', c.bio_entities);
     // 保存当前账号 username（去 @ 转小写）—— 用于 reply-card 识别主人 vs 外人
     ownerUsername = (c.username || '').replace(/^@/, '').toLowerCase();
     if (c.avatar) document.getElementById('p-avatar').src = `${ASSET_BASE}${c.avatar}`;
     if (c.banner) document.getElementById('p-banner').src = `${ASSET_BASE}${c.banner}`;
     if (c.location) document.getElementById('p-loc').innerHTML  = `📍 ${esc(c.location)}`;
     if (c.link) {
-      const d = c.link.replace(/^https?:\/\//,'');
-      document.getElementById('p-link').innerHTML = `🔗 <a href="${esc(c.link)}" target="_blank">${esc(d)}</a>`;
+      // 修复：裸域名（无协议头）会被浏览器当作相对路径，统一加上 https://
+      const rawLink = c.link;
+      const href = rawLink.startsWith('http://') || rawLink.startsWith('https://')
+        ? rawLink : 'https://' + rawLink;
+      const d = rawLink.replace(/^https?:\/\//, '');
+      document.getElementById('p-link').innerHTML = `🔗 <a href="${esc(href)}" target="_blank">${esc(d)}</a>`;
     }
   } catch(e) { console.warn('profile.json 加载失败', e); }
 }
@@ -1307,6 +1315,18 @@ if (document.readyState === 'loading') {
 }
 
 /* ── 日视图 ───────────────────────────────────────────── */
+/* 从 treeData 里找最新那天的日期字符串 */
+function getLatestDay() {
+  const years = Object.keys(treeData).sort();
+  if (!years.length) return null;
+  const y = years[years.length - 1];
+  const months = Object.keys(treeData[y]).sort();
+  const m = months[months.length - 1];
+  const days = Object.keys(treeData[y][m]).sort();
+  const d = days[days.length - 1];
+  return `${y}-${m}-${d}`;
+}
+
 function selectDay(dk, skipScroll = false) {
   if (searchMode) exitSearch();
   activeDay = dk;
@@ -1323,7 +1343,11 @@ function selectDay(dk, skipScroll = false) {
   const items = treeData[y]?.[m]?.[d]||[];
   document.getElementById('day-heading').innerHTML =
     `${y}年${m}月${d}日<span class="dim">${items.length} 篇</span>`;
-  renderDayView(items);
+
+  // 判断是否是最新那天，是的话在推文tab最前插入置顶
+  const latestDay = getLatestDay();
+  const isLatestDay = (dk === latestDay);
+  renderDayView(items, isLatestDay);
 
   // 手机端选完日期自动关抽屉
   autoCloseSidebarOnMobile();
@@ -1346,7 +1370,7 @@ function selectDay(dk, skipScroll = false) {
 }
 
 /* ── 渲染日视图（支持推文/回复两个tab）────────────────── */
-function renderDayView(items) {
+function renderDayView(items, showPinned = false) {
   const sorted = ascending
     ? [...items].sort((a,b)=>a.timestamp.localeCompare(b.timestamp))
     : [...items].sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
@@ -1355,7 +1379,7 @@ function renderDayView(items) {
 
   if (activeTab === 'tweets') {
     // 推文tab：只显示主推文（is_reply=false），并在每条下方附加其回复
-    renderTweetsTab(sorted, area);
+    renderTweetsTab(sorted, area, showPinned);
   } else {
     // 回复tab：显示所有回复推文（is_reply=true）
     renderRepliesTab(sorted, area);
@@ -1363,7 +1387,7 @@ function renderDayView(items) {
 }
 
 /* ── 推文Tab：主推文(iframe) + 可展开回复(完整对话链卡片) ── */
-function renderTweetsTab(sorted, area) {
+function renderTweetsTab(sorted, area, showPinned = false) {
   const mainTweets = sorted.filter(i => !i.is_reply);
 
   if (!mainTweets.length) {
@@ -1375,7 +1399,28 @@ function renderTweetsTab(sorted, area) {
     return;
   }
 
-  area.innerHTML = `<div class="anim">${mainTweets.map((item, i) => {
+  // 置顶推文 block（仅最新那天的推文 tab 显示）
+  let pinnedHtml = '';
+  if (showPinned) {
+    const pinnedItem = db.find(i => i.is_pinned && !i.is_virtual);
+    if (pinnedItem) {
+      const src = `${HTML_BASE}${pinnedItem.file}`;
+      pinnedHtml = `
+      <div class="pinned-block">
+        <div class="pinned-block-label">📌 已置顶</div>
+        <div class="post-iframe-wrap">
+          <iframe class="post-iframe"
+            src="${esc(src)}"
+            scrolling="no"
+            onload="onFrameLoad(this)"
+            sandbox="allow-scripts allow-same-origin allow-popups">
+          </iframe>
+        </div>
+      </div>`;
+    }
+  }
+
+  area.innerHTML = `<div class="anim">${pinnedHtml}${mainTweets.map((item, i) => {
     const { localTime } = utcToLocal(item.timestamp);
     const ownerReplies = (replyMap[item.tweet_id] || [])
       .slice()
@@ -1544,6 +1589,7 @@ function toggleReplies(toggleEl) {
 
 /* ── iframe 加载 ──────────────────────────────────────── */
 function onFrameLoad(iframe) {
+  iframe.style.opacity = '1';  // 确保 iframe 可见（置顶 iframe 初始 opacity:0）
   injectFitHeight(iframe);  // 先去掉 body min-height:100vh 让内容自适应
   injectTheme(iframe);
   // 推文tab展开的回复iframe：隐藏embedded-tweet-container（避免重复显示主推文内容）
@@ -1716,8 +1762,14 @@ function fixImagesInFrame(iframe) {
       if (embedded && embedded.contains(video)) return;
       // 从 source src 提取 media_key
       const srcEl = video.querySelector('source');
-      const vKey = srcEl ? extractVideoKey(srcEl.getAttribute('src') || '') : '';
+      const src = srcEl ? (srcEl.getAttribute('src') || '') : '';
+      const vKey = srcEl ? extractVideoKey(src) : '';
       if (!wantedVideoKeys.includes(vKey)) {
+        video.remove();
+        return;
+      }
+      // src 是网址（非本地路径）→ 直接删，不发网络请求
+      if (src.startsWith('http://') || src.startsWith('https://')) {
         video.remove();
       }
     });
@@ -1891,8 +1943,12 @@ function extractBasename(src) {
      - ..._video_twimg_com_amplify_video_2040869759278080000_... */
 function extractVideoKey(src) {
   if (!src) return '';
-  const m = src.match(/(?:amplify_video|ext_tw_video|tweet_video)[/_](\d+)/);
-  return m ? m[1] : '';
+  // amplify_video / ext_tw_video 后面是纯数字 tweet ID
+  const m1 = src.match(/(?:amplify_video|ext_tw_video)[/_](\d+)/);
+  if (m1) return m1[1];
+  // tweet_video 后面是字母数字 hash（animated_gif）
+  const m2 = src.match(/tweet_video[/_]([A-Za-z0-9]+)/);
+  return m2 ? m2[1] : '';
 }
 
 /* 从 iframe 里删除冗余的 t.co 短链文字（保留普通分享链接） */
@@ -2244,15 +2300,24 @@ function renderStats() {
 function renderRecent() {
   // 显示最新的8条（不按天去重，每条独立显示）
   const source = currentTabItems();
-  const latest = source.slice(0, 8);
-  document.getElementById('recent-list').innerHTML=latest.map(i=>{
+  const pinned = source.find(i => i.is_pinned && !i.is_virtual);
+  const latest = source.filter(i => !i.is_pinned).slice(0, 8);
+
+  const makeItem = (i, isPinned) => {
     const { localDate, localTime } = utcToLocal(i.timestamp);
     return `
-    <div class="recent-item" onclick="jumpToRecent('${localDate}','${esc(i.file)}')">
+    <div class="recent-item${isPinned ? ' recent-pinned' : ''}" onclick="jumpToRecent('${localDate}','${esc(i.file)}')">
+      ${isPinned ? '<div class="pinned-label">📌 已置顶</div>' : ''}
       <div class="recent-date">${localDate} · ${localTime}</div>
       <div class="recent-text">${esc(i.text.slice(0,50))}${i.text.length>50?'…':''}</div>
     </div>`;
-  }).join('');
+  };
+
+  const items = [
+    ...(pinned ? [makeItem(pinned, true)] : []),
+    ...latest.map(i => makeItem(i, false)),
+  ];
+  document.getElementById('recent-list').innerHTML = items.join('');
 }
 
 /* ── 最近收录点击：跳到该推文并对齐到搜索栏下方 ─────── */
@@ -2363,7 +2428,38 @@ function toggleTheme(){ applyTheme(!isLight); }
 
 /* ── 工具 ─────────────────────────────────────────────── */
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function escRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+function escRe(s){ return s.replace(/[.*+?^${}
+
+/* bio / 纯文本里的 URL 和 @用户名 转成可点击链接 */
+function linkifyText(text) {
+  if (!text) return '';
+  let s = esc(text);
+  s = s.replace(/(https?:\/\/[^\s&lt;&gt;&amp;"]+)/g, '<a href="$1" target="_blank" style="color:var(--accent,#1d9bf0)">$1</a>');
+  s = s.replace(/@([A-Za-z0-9_]+)/g, '<a href="https://x.com/$1" target="_blank" style="color:var(--accent,#1d9bf0)">@$1</a>');
+  return s;
+}
+
+/* 用 profile.json 里的 bio_entities 精确渲染 bio 链接（有 entities 用 entities，否则 fallback 到 linkifyText） */
+function renderBioWithEntities(text, entities) {
+  if (!text) return '';
+  const accentStyle = 'color:var(--accent,#1d9bf0)';
+  let result = esc(text);
+  // 替换 URL：优先匹配 t.co 短链，其次匹配 display_url（bio 里可能已展开）
+  for (const u of ((entities?.urls) || [])) {
+    const link = `<a href="${esc(u.expanded_url)}" target="_blank" style="${accentStyle}">${esc(u.display_url)}</a>`;
+    const escapedTco     = esc(u.url);
+    const escapedDisplay = esc(u.display_url);
+    if (result.includes(escapedTco)) {
+      result = result.replace(escapedTco, link);
+    } else if (result.includes(escapedDisplay)) {
+      result = result.replace(escapedDisplay, link);
+    }
+  }
+  // @用户名 统一用正则替换（不依赖 entities.mentions 是否完整）
+  result = result.replace(/@([A-Za-z0-9_]+)/g,
+    (_, name) => `<a href="https://x.com/${name}" target="_blank" style="${accentStyle}">@${name}</a>`);
+  return result;
+}()|[\]\\]/g,'\\$&'); }
 
 function utcToLocal(timestamp) {
   const d = new Date(timestamp);
