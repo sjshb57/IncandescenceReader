@@ -1163,11 +1163,29 @@ async function loadProfile() {
       const d = rawLink.replace(/^https?:\/\//, '');
       document.getElementById('p-link').innerHTML = `🔗 <a href="${esc(href)}" target="_blank">${esc(d)}</a>`;
     }
-    // 用账号头像作为 favicon
+    // 用账号头像作为 favicon（Canvas 裁成圆形）
     if (c.avatar) {
-      let favLink = document.querySelector("link[rel='icon']");
-      if (!favLink) { favLink = document.createElement('link'); favLink.rel = 'icon'; document.head.appendChild(favLink); }
-      favLink.href = `${ASSET_BASE}${c.avatar}`;
+      const avatarUrl = `${ASSET_BASE}${c.avatar}`;
+      const img = new Image();
+      img.onload = () => {
+        const sz = 64;
+        const cv = document.createElement('canvas');
+        cv.width = cv.height = sz;
+        const ctx = cv.getContext('2d');
+        ctx.beginPath();
+        ctx.arc(sz/2, sz/2, sz/2, 0, Math.PI*2);
+        ctx.clip();
+        ctx.drawImage(img, 0, 0, sz, sz);
+        let lnk = document.querySelector("link[rel='icon']");
+        if (!lnk) { lnk = document.createElement('link'); lnk.rel = 'icon'; document.head.appendChild(lnk); }
+        lnk.href = cv.toDataURL('image/png');
+      };
+      img.onerror = () => {
+        let lnk = document.querySelector("link[rel='icon']");
+        if (!lnk) { lnk = document.createElement('link'); lnk.rel = 'icon'; document.head.appendChild(lnk); }
+        lnk.href = avatarUrl;
+      };
+      img.src = avatarUrl;
     }
   } catch(e) { console.warn('profile.json 加载失败', e); }
 }
