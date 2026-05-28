@@ -1163,6 +1163,12 @@ async function loadProfile() {
       const d = rawLink.replace(/^https?:\/\//, '');
       document.getElementById('p-link').innerHTML = `🔗 <a href="${esc(href)}" target="_blank">${esc(d)}</a>`;
     }
+    // 用账号头像作为 favicon
+    if (c.avatar) {
+      let favLink = document.querySelector("link[rel='icon']");
+      if (!favLink) { favLink = document.createElement('link'); favLink.rel = 'icon'; document.head.appendChild(favLink); }
+      favLink.href = `${ASSET_BASE}${c.avatar}`;
+    }
   } catch(e) { console.warn('profile.json 加载失败', e); }
 }
 
