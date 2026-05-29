@@ -18,6 +18,14 @@
 
 ---
 
+### 附注
+
+> Twitter存档组织：[TwitterArchiver](https://github.com/TwitterArchiver)已成立
+> 
+> 如果您想在此留档，请在[此处提交申请](https://twitterarchiver.github.io/home/guestbook.html)
+
+---
+
 ## 目录结构
 
 ```
