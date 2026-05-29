@@ -1025,7 +1025,7 @@ let treeData  = {};
 let activeDay = null;
 let ascending = false;
 let searchMode= false;
-let isLight   = false;
+let isLight   = true;
 let activeTab = 'tweets';
 let ownerUsername = '';  // 当前账号 username（去 @ 转小写），用于识别"主人 vs 外人"
 
@@ -1036,7 +1036,8 @@ let replyMap = {};
 
 /* ── 启动 ─────────────────────────────────────────────── */
 async function init() {
-  if (localStorage.getItem('reader-theme') === 'light') applyTheme(true, false);
+  const _th = localStorage.getItem('reader-theme');
+  applyTheme(_th === 'dark' ? false : true, false);
   setupCustomScrollbar();
   // 先尝试加载账号清单
   await loadAccounts();
