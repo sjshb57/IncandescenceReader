@@ -215,3 +215,11 @@ https://github.com/CheeseGhostfox/IncandescenceReader
 Copyright © 2026 sjshb57
 
 本项目基于 [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html) 开源。你可以自由使用、修改和分发本项目，但衍生作品必须同样以 AGPL-3.0 协议开源。
+
+---
+
+## 赞助
+
+<p align="center">
+  <img src="https://free.picui.cn/free/2026/05/29/6a19262a15418.png" width="100%" alt="赞助图片">
+</p>
