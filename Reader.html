@@ -1282,6 +1282,9 @@ async function loadProfile() {
     if (!r.ok) return;
     const c = await r.json();
     document.getElementById('p-name').textContent     = c.name     || '';
+    // 页面标题随账号动态变化：「账号名 · IncandescenceReader」
+    const _disp = c.name || c.username || '';
+    if (_disp) document.title = _disp + ' · IncandescenceReader';
     document.getElementById('p-username').textContent = c.username || '';
     document.getElementById('p-bio').innerHTML      = renderBioWithEntities(c.bio || '', c.bio_entities);
     // 保存当前账号 username（去 @ 转小写）—— 用于 reply-card 识别主人 vs 外人
@@ -2561,7 +2564,13 @@ function jumpToPost(dayKey, file, tweetId) {
   if (item && item.is_reply) {
     const conv = item.conversation_id ? idIndex[item.conversation_id] : null;
     const belongsToOwnMain = conv && !conv.is_reply && !conv.is_virtual;
-    if (belongsToOwnMain) { targetTab = 'tweets'; isReplyCard = true; }
+    if (belongsToOwnMain) {
+      targetTab = 'tweets'; isReplyCard = true;
+      // 回复卡片挂在主推文那天渲染，而主推文可能与回复不在同一天，
+      // 必须用主推文的日期 selectDay，否则当前渲染的那天里没有这张回复卡片，定位会失败
+      const cd = utcToLocal(conv.timestamp);
+      if (cd && cd.localDate) dayKey = cd.localDate;
+    }
     else { targetTab = 'replies'; }
   }
   if (activeTab !== targetTab) switchTab(targetTab);
@@ -2871,7 +2880,6 @@ function openShare(tweetId, file) {
   const rows = [
     twitterUrl ? { label: '推特原链接', value: twitterUrl } : null,
     tweetId    ? { label: '推文 ID',    value: tweetId } : null,
-    file       ? { label: '文件名',     value: file } : null,
     locateUrl  ? { label: '存档定位链接（浏览器打开）', value: locateUrl } : null,
     shortCode  ? { label: '定位短码（粘贴到搜索框）', value: shortCode } : null,
   ].filter(Boolean);
