@@ -1189,9 +1189,12 @@ async function loadAccounts() {
     });
     accounts = await Promise.all(tasks);
   }
-  // 决定当前账号：localStorage > 第一个
+  // 决定当前账号：URL ?a= > localStorage > 第一个
+  const qa = new URLSearchParams(location.search).get('a');
   const remembered = localStorage.getItem('reader-account');
-  currentAccount = (remembered && accounts.find(a => a.dir === remembered)) || accounts[0];
+  currentAccount = (qa && accounts.find(a => a.dir.toLowerCase() === qa.toLowerCase()))
+                || (remembered && accounts.find(a => a.dir === remembered))
+                || accounts[0];
   applyAccountPaths(currentAccount);
   renderAccountSwitcher();
 }
