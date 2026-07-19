@@ -1133,6 +1133,7 @@ let db        = [];
 let treeData  = {};
 let activeDay = null;
 let ascending = false;
+let lastSearchKw = "";
 let searchMode= false;
 let preSearchState = null;  // 搜索前的浏览位置，取消搜索时恢复
 let isLight   = true;
@@ -2439,7 +2440,9 @@ function setupCustomScrollbar() {
 function toggleOrder() {
   ascending = !ascending;
   document.getElementById('order-btn').textContent = ascending ? '↓ 新→旧' : '↑ 旧→新';
-  if (activeDay && !searchMode) {
+  if (searchMode && lastSearchKw) {
+    doSearch(lastSearchKw);
+  } else if (activeDay) {
     const [y,m,d] = activeDay.split('-');
     renderDayView(treeData[y]?.[m]?.[d]||[]);
   }
@@ -2459,6 +2462,7 @@ function setupSearch() {
 
 function doSearch(kw) {
   if (!kw) { exitSearch(); return; }
+  lastSearchKw = kw;
   // 进入搜索前保存当前浏览位置（天 + 滚动），取消搜索时恢复
   if (!searchMode) {
     const col = document.getElementById('main-col');
@@ -2528,7 +2532,9 @@ function doSearch(kw) {
   const res=db.filter(i=>{
     const { localDate, localTime } = utcToLocal(i.timestamp);
     return (i.text&&i.text.toLowerCase().includes(kl))||localDate.includes(kw)||localTime.includes(kw);
-  });
+  }).sort((a,b)=>ascending
+    ? a.timestamp.localeCompare(b.timestamp)
+    : b.timestamp.localeCompare(a.timestamp));
   if (!res.length) {
     area.innerHTML=`<div class="welcome">
       <div class="welcome-icon" style="opacity:.3">🔍</div>
