@@ -1570,6 +1570,22 @@ function renderTweetsTab(sorted, area, showPinned = false) {
     const pinnedItem = db.find(i => i.is_pinned && !i.is_virtual);
     if (pinnedItem) {
       const src = `${HTML_BASE}${pinnedItem.file}`;
+      // 置顶推文也要构建回复链（和普通推文一致）
+      const pOwnerReplies = (replyMap[pinnedItem.tweet_id] || [])
+        .slice().sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      const pChainItems = [];
+      const pSeen = new Set();
+      pSeen.add(pinnedItem.tweet_id);
+      for (const rep of pOwnerReplies) {
+        const parentId = rep.reply_to_id;
+        if (parentId && parentId !== pinnedItem.tweet_id && !pSeen.has(parentId)) {
+          const parent = idIndex[parentId];
+          if (parent) { pChainItems.push(parent); pSeen.add(parentId); }
+        }
+        if (!pSeen.has(rep.tweet_id)) { pChainItems.push(rep); pSeen.add(rep.tweet_id); }
+      }
+      const pReplyCount = pOwnerReplies.length;
+      const pHasReplies = pReplyCount > 0;
       pinnedHtml = `
       <div class="pinned-block">
         <div class="pinned-block-label">📌 已置顶</div>
@@ -1585,6 +1601,17 @@ function renderTweetsTab(sorted, area, showPinned = false) {
             sandbox="allow-scripts allow-same-origin allow-popups">
           </iframe>
         </div>
+        ${pHasReplies ? `
+        <div class="replies-section">
+          <div class="replies-toggle" onclick="toggleReplies(this)">
+            <span class="replies-toggle-icon">▶</span>
+            <span>展开回复</span>
+            <span class="replies-count-badge">${pReplyCount}</span>
+          </div>
+          <div class="replies-list">
+            ${pChainItems.map(rep => renderReplyCard(rep)).join('')}
+          </div>
+        </div>` : ''}
       </div>`;
     }
   }
