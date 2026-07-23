@@ -1,9 +1,9 @@
-## 白炽阅读器 · IncandescenceReader
+# 白炽阅读器 · IncandescenceReader
 
 一个将本地 Twitter/X 存档打包成单文件便携桌面应用的离线阅读器，支持多账号。
 
-> 此项目初衷是为 @AnIncandescence 所做的 Twitter 存档阅读器。  
-> 她不希望被遗忘，不想被遗忘，这或许是她最后的愿望。  
+> 此项目初衷是为 @AnIncandescence 所做的 Twitter 存档阅读器。
+> 她不希望被遗忘，不想被遗忘，这或许是她最后的愿望。
 > 这个项目因她而生，即使你不认识她，也请让我们悼念，愿她的来生不再痛苦，愿她会被这个世界所偏爱。
 >
 > 晚安，炽烈已极。
@@ -11,10 +11,10 @@
 ---
 
 ### 成品展示：
-<img src="https://free.picui.cn/free/2026/05/02/69f5f0e0474e9.png" width="100%" style="max-width: 1100px; border-radius: 8px;"  alt=""/>
 
-**友链：**
-**sjshb57.github.io/AnIncanescence**
+![](https://free.picui.cn/free/2026/05/02/69f5f0e0474e9.png)
+
+**友链：** **[twitterarchiver.github.io/AnIncanescence](https://twitterarchiver.github.io/AnIncanescence/)**
 
 ---
 
@@ -23,6 +23,48 @@
 > Twitter存档组织：[TwitterArchiver](https://github.com/TwitterArchiver)已成立
 > 
 > 如果您想在此留档，请在[此处提交申请](https://twitterarchiver.github.io/home/guestbook.html)
+
+---
+
+## 项目生态
+
+整个体系由「抓取 → 存放 → 阅读」三层构成，本仓库是阅读层里的桌面端。
+
+```
+                 Wayback Machine
+                       │
+                       ▼
+           IncandescenceArchiver
+           抓取快照 · 下载媒体 · 清洗 · 建索引
+                       │
+                       ▼
+           TwitterArchiver 组织
+           140+ 账号仓库 · GitHub Pages 托管
+                       │
+       ┌───────────────┼───────────────┐
+       ▼               ▼               ▼
+   网页阅读器      桌面阅读器        Android
+twitterarchiver  Incandescence   TwitterArchiverApp
+  .github.io        Reader
+                  ← 本仓库
+```
+
+### 工具
+
+| 项目 | 说明 | 技术 / 协议 |
+| --- | --- | --- |
+| [**TwitterArchiverApp**](https://github.com/sjshb57/TwitterArchiverApp) | Android 客户端。原生推文流、全站视图、日期树、本地书签，另有一套存档管理工具 | Kotlin · AGPL-3.0 |
+| [**IncandescenceReader**](https://github.com/sjshb57/IncandescenceReader) | 本仓库。桌面离线阅读器，Electron 打包成免安装的便携应用，支持多账号 | Electron · AGPL-3.0 |
+| [**IncandescenceArchiver**](https://github.com/sjshb57/IncandescenceArchiver) | 存档工具 `archive.py`，抓取快照、下载媒体、清洗 HTML，生成本阅读器所需的 `index.json` | Python · AGPL-3.0 |
+
+### 存档
+
+| 仓库 | 说明 |
+| --- | --- |
+| [**TwitterArchiver**](https://github.com/TwitterArchiver) | 存档组织，每个账号一个独立仓库，各自托管 GitHub Pages |
+| [**TwitterArchiver/home**](https://github.com/TwitterArchiver/home) | 门户与聚合数据：账号清单、全站搜索索引、跨账号回复索引 |
+| [**TwitterArchiver/search**](https://twitterarchiver.github.io/home/search.html) | 网页版入口，可浏览全部账号与全站搜索 |
+| [**TwitterArchiver/guestbook**](https://twitterarchiver.github.io/home/guestbook.html) | 提交想要留档的账号 |
 
 ---
 
@@ -36,16 +78,15 @@ IncandescenceReader/
   icon.ico              ← 可选，替换成自己的图标
   accounts/             ← 把所有账号的数据放这里
     AnIncandescence/
-      cdx_data.json     ← wayback 流程需要（私密账号 dump 流程不需要）
+      cdx_data.json     ← wayback 流程需要（导入流程不需要）
       wayback_snapshots/
         index.json      ← archive.py build-index 生成
         profile.json
         html/
-        json/
         avatar/
         image/
         video/
-        _log/           ← 下载状态目录（自动生成）
+        json/
     TauCeti_10700/      ← 多账号支持，可放任意数量
       wayback_snapshots/
         ...
@@ -59,38 +100,44 @@ IncandescenceReader/
 
 ### 第一步：准备数据
 
-数据通过配套的存档脚本 [archive.py](https://github.com/sjshb57/IncandescenceArchiver) 抓取，有两种来源：
+数据由 [**IncandescenceArchiver**](https://github.com/sjshb57/IncandescenceArchiver) 的 `archive.py` 生成，有三条来源可选。以下命令都在账号目录（`accounts/{USERNAME}/`）下执行。
 
-**A. Wayback Machine 流程（公开账号）**
+**最省事的方式**：直接从 [TwitterArchiver](https://github.com/TwitterArchiver) 组织克隆现成的账号仓库，把里面的 `accounts/<账号>/wayback_snapshots/` 复制过来即可，无需跑任何脚本。
 
-在对应账号目录下依次执行：
-
-```bash
-cd accounts/AnIncandescence
-
-python ../../archive.py fetch-cdx AnIncandescence  # 1. 抓取 Wayback 快照清单
-python ../../archive.py fetch-html                 # 2. 下载 HTML 快照
-python ../../archive.py fetch-media                # 3. 下载图片/视频/头像
-python ../../archive.py build-index                # 4. 生成 index.json 索引
-```
-
-**B. X API Dump 流程（私密账号，Wayback 上没有存档）**
-
-数据来自 `download_archive.py` 抓取的 dump（需含 `snapshots.json`）：
+#### A. Wayback Machine（公开账号）
 
 ```bash
-cd accounts/TauCeti_10700
-
-python ../../archive.py convert /path/to/dump_dir/  # 1. 转换 dump（json/ + 媒体）
-python ../../archive.py render-html                 # 2. 从 json/ 渲染 HTML
-python ../../archive.py build-index                 # 3. 生成 index.json 索引
+python ../../archive.py fetch-cdx {USERNAME}   # 抓取 CDX 快照清单
+python ../../archive.py all                    # fetch-html → fetch-media → clean-html → build-index
 ```
 
-> 媒体在 `convert` 时已从 dump 复制到本地，不需要 `fetch-media`。
+#### B. 从 webarchived_tweet_downloader 导入
 
-**增量更新**：再次执行同样的命令即可，脚本自动跳过已完成的内容，只处理新增和失败的部分。
+[webarchived_tweet_downloader](https://github.com/gfhdhytghd/webarchived_tweet_downloader) 除 Wayback 外还能走**官方 X API**，可以补到 Wayback 没存下来的推文、完整回复链和被回复的原文：
 
----
+```bash
+# 先用上游工具抓（在它自己的目录下）
+python download_archive.py {USERNAME}
+
+# 再回到本项目账号目录导入
+python ../../archive.py convert /path/to/{USERNAME}_archive/
+python ../../archive.py render-html
+python ../../archive.py fetch-media
+python ../../archive.py build-index
+```
+
+#### C. 从 X 官方数据导出包导入（锁推 / 私密账号）
+
+适用于自己账号从 X 申请的完整导出包（含 `data/tweets.js`）：
+
+```bash
+python ../../archive.py import-export /path/to/twitter-{USERNAME}-export/
+python ../../archive.py render-html
+python ../../archive.py fetch-media
+python ../../archive.py build-index
+```
+
+完整的参数说明与增量更新方式见 [IncandescenceArchiver 文档](https://github.com/sjshb57/IncandescenceArchiver)。
 
 ### 第二步：安装依赖（只需一次）
 
@@ -134,7 +181,11 @@ dist/
 - `win-unpacked/` 整个文件夹就是程序本体，移动时需要整个文件夹一起移动，不能单独拷走里面的 exe
 - 文件夹大小取决于存档数据量（Electron 内置 Chromium 约 150MB + 数据）
 - 如果没有 `icon.ico`，打包时会用默认图标，不影响功能（可以忽略警告）
-- **更新存档后不需要重新打包**，直接在账号目录下重新跑 archive.py，再把新的 `index.json` 替换到 `win-unpacked/resources/accounts/{USERNAME}/wayback_snapshots/`，下次启动自动生效
+- **更新存档后不需要重新打包**，直接操作 `win-unpacked/resources/accounts/{USERNAME}/wayback_snapshots/`：
+  1. 把新的 HTML 文件复制到 `.../wayback_snapshots/html/`
+  2. 重新跑 `archive.py build-index` 生成新的 `index.json`
+  3. 把新的 `index.json` 替换到 `.../wayback_snapshots/`
+  4. 下次启动自动生效
 - 添加新账号也无需重新打包：在 `resources/accounts/` 下新建账号目录放好数据即可，下次启动自动出现在切换菜单里
 - 只有修改了 `Reader.html` 或 `main.js` 代码本身时，才需要重新 `npm run dist`
 
@@ -142,15 +193,14 @@ dist/
 
 ## 技术实现
 
-### archive.py — 存档与索引构建
+### build_index.py — 索引构建
 
-配套存档脚本，负责从 Wayback Machine 抓取数据并生成索引。详见 [archive.py 项目文档](https://github.com/sjshb57/Test)。
+> 该脚本已合并进 [IncandescenceArchiver](https://github.com/sjshb57/IncandescenceArchiver) 的 `archive.py build-index` 子命令，本仓库保留一份独立版本便于单独使用。
 
 扫描账号目录下 `wayback_snapshots/html/` 与 `wayback_snapshots/json/`，对每条推文从两边综合提取数据：
 
 - **JSON 优先**：从 X API JSON 直接读取作者、时间、文本、媒体 key、引用关系等结构化字段
 - **HTML 兜底**：JSON 缺失时从 HTML 解析（DateString、`#nonjsonview` 内的 `.tweet-content`）
-- **本地媒体索引**：扫描 `image/`、`video/`、`avatar/` 目录，直接生成本地路径，不依赖预处理
 
 输出 `wayback_snapshots/index.json`，每条记录包含完整字段：
 
@@ -169,15 +219,14 @@ dist/
   "is_reply": false,
   "is_virtual": false,
   "reply_to_id": "...",
-  "wanted_images": ["../image/xxx.jpg"],
-  "wanted_videos": ["../video/xxx.mp4"],
-  "wanted_avatars": ["../avatar/avatar_xxx.jpg"],
-  "embedded_images": [...],
-  "embedded_videos": [...]
+  "wanted_images": [],
+  "embedded_images": [],
+  "wanted_videos": [],
+  "embedded_videos": []
 }
 ```
 
-被引用但本地无独立 HTML 的外人推文以"虚拟条目"形式加入索引（`is_virtual: true`），从 `<embedded-tweet-container>` 提取。
+被引用但本地无独立 HTML 的外人推文以「虚拟条目」形式加入索引（`is_virtual: true`），从 `<embedded-tweet-container>` 提取。脚本同时构建 `tweet_id_index` 来追溯祖先推文上的媒体（多层引用嵌套时正确归属图片）。
 
 ### main.js — Electron 主进程
 
@@ -198,27 +247,21 @@ dist/
 
 **多账号切换**：启动时 fetch `incr://local/_accounts` 拿到账号清单，右上角显示切换按钮，点击弹层选账号，localStorage 记忆当前选择。切换时重设路径常量并重新加载 profile.json + index.json。
 
-**iframe 渲染**：每条推文用独立 iframe 加载原始 HTML 存档。`onload` 时通过 `contentDocument` 直接操作 DOM：
-- 注入明/暗两套主题样式
-- 删除 Wayback Machine 工具栏和 JSON 展示元素
-- 根据 `wanted_images` / `wanted_videos` / `wanted_avatars` 字段将媒体 src 替换为本地路径
-- 本地文件不存在时通过 `onerror` / `error` 事件自动移除对应元素，不显示破图或空白播放器
-- 折叠 embedded 引用框，用 `scrollHeight` 自动撑开 iframe 高度
-
-所有这些操作完成后才标记 `dataset.loaded='1'`，作为"高度真正稳定"的信号。
+**iframe 渲染**：每条推文用独立 iframe 加载原始 HTML 存档。`onload` 时通过 `contentDocument` 直接操作 DOM 注入主题样式（明/暗两套配色）、根据 `wanted_images` / `embedded_images` 字段精准过滤媒体（避免显示破图）、折叠 embedded 引用框，最后用 `scrollHeight` 自动撑开 iframe 高度避免内部滚动条。所有这些操作完成后才标记 `dataset.loaded='1'`，作为「高度真正稳定」的信号。
 
 **最近收录跳转**：右栏点击会切换日期 + 跳到目标推文。跳转前先 `visibility:hidden` 主列，再轮询等待目标 iframe 及其之前的 iframe 全部 `dataset.loaded='1'`（同时检查内部 `<img>` 是否 complete），主动重跑 `autoHeight` 同步高度，最后用 `getBoundingClientRect` 算位置 + `scrollTop` 直接跳转，不留滚动动画。
 
 **搜索**：在内存中对 `index.json` 的 `text` 字段进行全文过滤，支持关键词高亮，点击结果可跳转至对应日期视图并滚动定位。所有时间戳以 UTC 存储，显示时通过 `Date` 对象转换为用户本地时区。
 
-**引用标识**：根据 `author_username == 当前账号 username` 判断主人 vs 外人，所有非主人发的推文（无论是否虚拟条目）显示"引用"标识，正确处理 wayback 流程（外人推文均为虚拟条目）和 dump 流程（外人推文也有独立 HTML 存档）两种数据源。
+**引用标识**：根据 `author_username == 当前账号 username` 判断主人 vs 外人，所有非主人发的推文（无论是否虚拟条目）显示「引用」标识，正确处理 wayback 流程（外人推文均为虚拟条目）和导入流程（外人推文也有独立 HTML 存档）两种数据源。
 
 ---
 
 ## 鸣谢
 
-感谢 @CheeseGhostfox 的启发，项目地址：
-https://github.com/CheeseGhostfox/IncandescenceReader
+感谢 @CheeseGhostfox 的启发，项目地址：<https://github.com/CheeseGhostfox/IncandescenceReader>
+
+感谢 [@gfhdhytghd](https://github.com/gfhdhytghd) 的 [webarchived_tweet_downloader](https://github.com/gfhdhytghd/webarchived_tweet_downloader)，为本项目提供了 X API 路径的数据来源。
 
 ---
 
@@ -228,10 +271,10 @@ Copyright © 2026 sjshb57
 
 本项目基于 [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html) 开源。你可以自由使用、修改和分发本项目，但衍生作品必须同样以 AGPL-3.0 协议开源。
 
+存档内容本身的版权归原作者所有。本项目仅做数字保存，不主张任何内容权利。
+
 ---
 
 ## 赞助
 
-<p align="center">
-  <img src="https://free.picui.cn/free/2026/05/29/6a19262a15418.png" width="100%" alt="赞助图片">
-</p>
+![赞助图片](https://free.picui.cn/free/2026/06/24/6a3b25866f0fd.jpg)
